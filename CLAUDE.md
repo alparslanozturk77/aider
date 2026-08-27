@@ -152,6 +152,9 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 | `mcp-ekle` | MCP sunucusu ekleme, teşhis, çevrimdışı kurulum |
 | `upstream-birlestir` | Upstream'den güncelleme |
 | `rhel-yonetim` | RHEL sistem yönetimi, Satellite, IdM |
+| `k8s-rancher` | Kubernetes/Rancher teşhisi, docker |
+| `servis-teshis` | PostgreSQL, Redis, RabbitMQ, Nginx, Apache |
+| `rapor-uret` | CSV / Excel / PDF / HTML rapor üretimi |
 
 `ornek/altyapi/` altında filo geneli operasyonlar için ayrı bir şablon var
 (beceri + izin kuralları). Aider fork'unun parçası değil, kopyalanacak örnek.
