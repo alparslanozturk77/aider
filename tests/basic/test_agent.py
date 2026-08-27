@@ -1055,3 +1055,140 @@ class TestMCPManager(MCPServerTestCase):
         mgr.shutdown()
         self.assertFalse(server.is_alive())
         self.assertEqual(mgr.tools, [])
+
+
+# ---------------------------------------------------------------------------
+# /model-ekle
+# ---------------------------------------------------------------------------
+
+import yaml  # noqa: E402
+
+from aider.agent.model_setup import ModelSetupCancelled, run_setup  # noqa: E402
+
+
+class TestModelSetup(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self.tmp.name)
+        self.io = MagicMock()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _run(self, answers):
+        self.io.prompt_ask.side_effect = answers
+        return run_setup(self.io, home=self.home)
+
+    def _conf(self):
+        return yaml.safe_load((self.home / ".aider.conf.yml").read_text(encoding="utf-8"))
+
+    def _meta(self):
+        return json.loads((self.home / ".aider.model.metadata.json").read_text(encoding="utf-8"))
+
+    def _settings(self):
+        return yaml.safe_load((self.home / ".aider.model.settings.yml").read_text(encoding="utf-8"))
+
+    def test_corporate_endpoint_writes_all_three_files(self):
+        name, written = self._run(["1", "qwen3-coder", "https://llm.kurum/v1", "anahtar", "", ""])
+        self.assertEqual(name, "openai/qwen3-coder")
+        self.assertEqual(len(written), 3)
+        for path in written:
+            self.assertTrue(Path(path).is_file())
+
+    def test_prefix_is_added_once(self):
+        name, _ = self._run(["1", "qwen3-coder", "https://x/v1", "k", "", ""])
+        self.assertEqual(name, "openai/qwen3-coder")
+
+    def test_user_supplied_prefix_is_not_doubled(self):
+        name, _ = self._run(["1", "openai/qwen3-coder", "https://x/v1", "k", "", ""])
+        self.assertEqual(name, "openai/qwen3-coder")
+
+    def test_ollama_uses_its_own_prefix(self):
+        name, _ = self._run(["2", "qwen3-coder:30b", "http://localhost:11434", "", "", ""])
+        self.assertTrue(name.startswith("ollama_chat/"), name)
+
+    def test_edit_format_defaults_to_agent(self):
+        self._run(["1", "m", "https://x/v1", "k", "", ""])
+        self.assertEqual(self._conf()["edit-format"], "agent")
+        self.assertEqual(self._settings()[0]["edit_format"], "agent")
+
+    def test_metadata_declares_function_calling(self):
+        name, _ = self._run(["1", "m", "https://x/v1", "k", "", ""])
+        # Agent modu tool calling'e bağlı; metadata bunu bildirmezse aider
+        # modeli araçsız sanabilir.
+        self.assertTrue(self._meta()[name]["supports_function_calling"])
+
+    def test_custom_context_window_is_honoured(self):
+        name, _ = self._run(["1", "m", "https://x/v1", "k", "128000", "4096"])
+        self.assertEqual(self._meta()[name]["max_input_tokens"], 128000)
+        self.assertEqual(self._meta()[name]["max_output_tokens"], 4096)
+
+    def test_config_file_is_not_world_readable(self):
+        # Dosya API anahtarı taşıyor.
+        self._run(["1", "m", "https://x/v1", "gizli", "", ""])
+        mode = (self.home / ".aider.conf.yml").stat().st_mode & 0o777
+        self.assertEqual(mode, 0o600)
+
+    def test_second_model_replaces_not_duplicates(self):
+        self._run(["1", "model-a", "https://x/v1", "k", "", ""])
+        self._run(["1", "model-a", "https://y/v1", "k", "", ""])
+        names = [s["name"] for s in self._settings()]
+        self.assertEqual(names.count("openai/model-a"), 1)
+
+    def test_adding_a_model_keeps_the_previous_one(self):
+        self._run(["1", "model-a", "https://x/v1", "k", "", ""])
+        self._run(["1", "model-b", "https://x/v1", "k", "", ""])
+        names = {s["name"] for s in self._settings()}
+        self.assertEqual(names, {"openai/model-a", "openai/model-b"})
+        self.assertEqual(set(self._meta()), {"openai/model-a", "openai/model-b"})
+
+    def test_empty_model_name_is_rejected(self):
+        with self.assertRaises(ModelSetupCancelled):
+            self._run(["1", "", "https://x/v1", "k", "", ""])
+
+    def test_invalid_context_is_reprompted(self):
+        # 'abc' ve '0' reddedilmeli, sonra 5000 kabul edilmeli.
+        name, _ = self._run(["1", "m", "https://x/v1", "k", "abc", "0", "5000", ""])
+        self.assertEqual(self._meta()[name]["max_input_tokens"], 5000)
+
+
+# ---------------------------------------------------------------------------
+# Depodaki beceriler
+# ---------------------------------------------------------------------------
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+class TestShippedSkills(unittest.TestCase):
+    """Depoyla gelen becerilerin gerçekten yüklenebildiğini doğrula."""
+
+    def setUp(self):
+        from aider.agent.skills import SkillLibrary
+
+        self.lib = SkillLibrary([REPO_ROOT / "aider-skills"])
+
+    def test_skills_are_discovered(self):
+        self.assertTrue(self.lib.skills, "aider-skills/ altında beceri bulunamadı")
+
+    def test_every_skill_has_a_trigger_description(self):
+        # Açıklama olmadan model beceriyi hiç tetikleyemez.
+        for skill in self.lib.skills.values():
+            self.assertTrue(skill.description, f"{skill.name}: description yok")
+            self.assertGreater(
+                len(skill.description), 30, f"{skill.name}: açıklama tetikleme için fazla kısa"
+            )
+
+    def test_every_skill_has_a_body(self):
+        for skill in self.lib.skills.values():
+            self.assertGreater(len(skill.body.strip()), 200, f"{skill.name}: gövde fazla kısa")
+
+    def test_catalog_lists_all_skills(self):
+        catalog = self.lib.catalog()
+        for name in self.lib.skills:
+            self.assertIn(name, catalog)
+
+    def test_skill_name_matches_directory(self):
+        for name, skill in self.lib.skills.items():
+            self.assertEqual(
+                name, skill.path.parent.name, f"{name}: frontmatter adı dizin adıyla uyuşmuyor"
+            )

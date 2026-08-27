@@ -1,0 +1,74 @@
+---
+name: beceri-yaz
+description: Yeni bir aider becerisi yazarken ya da var olanı düzeltirken kullan. Beceri biçimini, tetikleme mantığını ve sık yapılan hataları anlatır. "beceri yaz", "skill ekle", "yeni beceri", "skill çalışmıyor" isteklerinde tetiklenir.
+---
+
+## Beceri nedir
+
+Bir klasör ve içinde YAML frontmatter'lı bir `SKILL.md`. Sistem promptuna
+yalnızca `ad: açıklama` satırı girer; gövde ancak model `Skill` aracını
+çağırınca yüklenir. Bu yüzden onlarca beceri tanımlamak bağlam maliyeti
+yaratmaz.
+
+## Nereye yazılır
+
+| Dizin | Kim görür | Depoya girer mi |
+|---|---|---|
+| `aider-skills/<ad>/SKILL.md` | takım | evet |
+| `.aider/skills/<ad>/SKILL.md` | yalnız sen | hayır |
+
+Paylaşılacak beceriyi `aider-skills/` altına yaz. `.aider/` ile başlayan yol
+`.gitignore`'daki `.aider*` kuralına takılır ve depoya giremez.
+
+İskelet için: `/skills new <ad>`
+
+## Frontmatter
+
+```yaml
+---
+name: beceri-adi
+description: NE ZAMAN kullanılacağı + tetikleyici kelimeler
+---
+```
+
+`description` **en kritik alandır.** Model beceriyi kullanıp kullanmayacağına
+yalnızca bu satıra bakarak karar verir; gövdeyi o aşamada görmez.
+
+İyi: `Bir değişikliği gözden geçirirken kullan. "incele", "review", "gözden
+geçir" isteklerinde tetiklenir.`
+
+Kötü: `Kod inceleme becerisi.` — ne zaman kullanılacağını söylemiyor.
+
+Açıklaması olmayan beceri **sessizce atlanır**.
+
+## Gövde nasıl yazılır
+
+Gövde modele verilen talimattır, insana anlatım değil.
+
+- **Somut ol.** "Dikkatli ol" bir talimat değildir. "Önce `git diff` çalıştır,
+  sonra her değişen dosyayı Read ile oku" talimattır.
+- **Sıra ver.** Numaralı adımlar, modelin atlamasını zorlaştırır.
+- **Araç adı geç.** Read, Grep, Glob, Bash — hangi adımda hangisi.
+- **Durma koşulu koy.** Ne zaman bitmiş sayılacağını söyle.
+- **Sınır koy.** Neyi yapmayacağını da yaz; zayıf modeller kapsamı taşırır.
+
+Uzunluk: 30-120 satır iyi bir aralık. Çok kısa olan yönlendirmez, çok uzun
+olan bağlamı yer ve model ortasını kaçırır.
+
+## Test et
+
+1. `/skills` — beceri listede görünüyor mu?
+2. Becerinin kapsamına giren bir istek yaz, model kendiliğinden `Skill`
+   aracını çağırıyor mu?
+3. Çağırmıyorsa sorun neredeyse her zaman `description`'dadır: tetikleyici
+   kelimeleri ekle.
+
+`SKILL.md`'yi düzenledikten sonra `/skills` diskten yeniden yükler; aider'ı
+kapatmana gerek yok.
+
+## Sık yapılan hatalar
+
+- Açıklamada *ne olduğunu* yazıp *ne zaman kullanılacağını* yazmamak
+- Gövdeye insan için giriş paragrafı koymak — model talimat bekliyor
+- Kod tabanına özgü gerçekleri beceriye gömmek; onlar `CLAUDE.md`'ye ait
+- Aynı işi yapan ikinci bir beceri yazmak; önce `/skills` ile bak

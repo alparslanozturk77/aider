@@ -26,37 +26,55 @@ göre bir sonraki adıma karar verir.
 
 ## Kurulum
 
-```bash
-git clone <bu-fork-un-adresi> aider
-cd aider
-python3.12 -m venv .venv
-.venv/bin/pip install -e .
-```
-
-Kurum endpoint'ini tanımla — şablonların tamamı `ornek/` dizininde:
+Tek satır:
 
 ```bash
-cp ornek/env                        .env
-cp ornek/aider.conf.yml             .aider.conf.yml
-cp ornek/aider.model.settings.yml   .aider.model.settings.yml
-cp ornek/aider.model.metadata.json  .aider.model.metadata.json
-mkdir -p .aider && cp ornek/permissions.yml .aider/permissions.yml
+curl -fsSL https://raw.githubusercontent.com/alparslanozturk77/aider/claude-code-layer/kur.sh | sh
 ```
 
-`.env` içindeki `OPENAI_API_BASE` ve `OPENAI_API_KEY` değerlerini kurumun
-verdiği değerlerle doldur. Model adını doğrulamak için:
+Betik `uv`'yi (yoksa) kurar, aider-agent'ı izole bir ortama yerleştirir ve
+`aider` komutunu PATH'e koyar. **Sanal ortam kurman ya da yönetmen gerekmez;
+uv hepsini gizler.** Aynı komut güncelleme için de çalışır.
+
+Sonra modelini programın içinden tanıt:
+
+```bash
+aider --agent
+/model-ekle
+```
+
+`/model-ekle` endpoint tipini, model kimliğini, adresi, anahtarı ve bağlam
+penceresini sorar; ev dizinindeki üç yapılandırma dosyasını yazar
+(`~/.aider.conf.yml` 0600 izniyle, çünkü anahtar taşıyor). Tanım tüm
+projelerde geçerli olur.
+
+Model kimliğini bilmiyorsan:
 
 ```bash
 curl -s "$OPENAI_API_BASE/models" \
   -H "Authorization: Bearer $OPENAI_API_KEY" | jq -r '.data[].id'
 ```
 
-Çıkan kimliği `.aider.conf.yml` içinde `openai/` önekiyle yaz:
-`model: openai/qwen3-coder`
+### Neden venv değil de uv?
 
-Çalıştır:
+Bağımlılık ağacı büyük — kurulum ~630 MB, tek başına
+`tree-sitter-language-pack` 351 MB (aider'ın repo haritası için, upstream
+bağımlılığı). Bu boyutta gerçek bir tek-dosya ikili (PyInstaller/shiv)
+mantıklı değil: çok büyük olur ve her platform için ayrı derlenmesi gerekir.
+
+`uv` bu sorunu farklı çözüyor: kendisi 36 MB'lık tek statik ikili, Python'u da
+kendi indiriyor, ve `uv tool install` uygulamayı senin görmediğin izole bir
+ortama kuruyor. Sonuç kullanıcı açısından Claude Code'a en yakın deneyim:
+bir kurulum komutu, sonra sadece `aider`.
+
+### Elle kurulum (geliştirme için)
 
 ```bash
+git clone https://github.com/alparslanozturk77/aider.git && cd aider
+python3.12 -m venv .venv && .venv/bin/pip install -e .
+cp ornek/env .env
+cp ornek/aider.conf.yml .aider.conf.yml
+mkdir -p .aider && cp ornek/permissions.yml .aider/permissions.yml
 .venv/bin/aider --agent
 ```
 
@@ -251,6 +269,7 @@ Oturum içinde `/plan` ile açıp kapatabilirsin.
 | `/permissions` | İzin modunu ve kurallarını gösterir |
 | `/todo` | Mevcut görev listesini gösterir |
 | `/model <ad>` | Modeli değiştirir (aider'ın kendi komutu) |
+| `/model-ekle` | Yeni modeli adım adım tanımlar ve kaydeder |
 
 `/skills` beceriyi yeniden okuduğu için, `SKILL.md` dosyasını düzenleyip aider'ı
 yeniden başlatmadan test edebilirsin.
@@ -307,13 +326,41 @@ verilebilir bir metne çevirir. Model yanlış argüman gönderdiğinde ya da ol
 bir dosyayı okumaya çalıştığında oturum çökmez — model hatayı görür ve kendini
 düzeltir. Bu, agentic döngünün dayanıklılığının temelidir.
 
+## Upstream'den güncelleme
+
+Fork upstream aider'ın beş dosyasına dokunuyor. Merge'in asıl riski çakışma
+değil — çakışma görünür. Asıl risk merge'in yama satırlarını koruyup
+**davranışı** bozmasıdır.
+
+```bash
+./scripts/upstream_birlestir.sh              # en son upstream main
+./scripts/upstream_birlestir.sh v0.90.0      # belirli bir etiket
+```
+
+Betik upstream'i getirir, dokunduğumuz dosyalarda ne değiştiğini gösterir,
+merge eder, fork değişmezlerini doğrular ve testleri çalıştırır. Çakışmayı
+çözmez — kararı sana bırakır.
+
+Elle merge yaptıysan:
+
+```bash
+.venv/bin/python scripts/fork_dogrula.py
+```
+
+Bu betik dokuz değişmezi **kodu çağırarak** sınar, dosyada metin aramaz. Bir
+merge `models.py`'deki yama satırlarını koruyup `tool_choice`'u yine
+sabitleyebilir; metin araması bunu kaçırır, davranış testi kaçırmaz.
+
+Bozulan her kontrol hangi dosyaya bakman gerektiğini ve o dokunuşun neden
+orada olduğunu söyler.
+
 ## Testler
 
 ```bash
 .venv/bin/python -m pytest tests/basic/test_agent.py -q
 ```
 
-110 test:
+127 test:
 
 - **Araçlar** — her aracın mutlu yolu ve hata yolları
 - **Beceriler** — keşif, frontmatter ayrıştırma, kök öncelik sırası
@@ -328,4 +375,10 @@ düzeltir. Bu, agentic döngünün dayanıklılığının temelidir.
   çöken sunucu, yanıt vermeyen sunucu (zaman aşımı gerçekten uygulanıyor mu),
   bir sunucunun ölümünün diğerlerini etkilemediği
 
-Tüm upstream test takımı da geçmeye devam eder (toplam 585 test).
+- **Model tanımlama** — `/model-ekle` akışı: önek, izinler, üzerine yazma
+- **Beceriler** — depodaki sekiz becerinin yüklenebildiği ve tetikleme
+  açıklamalarının var olduğu
+
+Ayrıca `scripts/fork_dogrula.py` fork değişmezlerini davranışsal olarak sınar.
+
+Tüm upstream test takımı da geçmeye devam eder (toplam 602 test).

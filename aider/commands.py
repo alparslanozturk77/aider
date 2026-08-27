@@ -1332,6 +1332,31 @@ Sonucun kullanıcıya nasıl sunulacağını tarif et.
         for err in coder.mcp.errors:
             self.io.tool_error(f"başlatılamadı — {err}")
 
+    def cmd_model_ekle(self, args):
+        """Set up a model interactively and write it to your home config."""  # noqa
+        from aider.agent.model_setup import ModelSetupCancelled, run_setup
+
+        try:
+            model_name, written = run_setup(self.io)
+        except ModelSetupCancelled as err:
+            self.io.tool_error(f"Model tanımlama iptal edildi: {err}")
+            return
+        except (OSError, KeyboardInterrupt) as err:
+            self.io.tool_error(f"Model tanımlanamadı: {err}")
+            return
+
+        self.io.tool_output()
+        self.io.tool_output(f"Model tanımlandı: {model_name}")
+        for path in written:
+            self.io.tool_output(f"  yazıldı: {path}")
+
+        self.io.tool_output()
+        if self.io.confirm_ask(f"Şimdi {model_name} modeline geçilsin mi?"):
+            # cmd_model'a devret: model doğrulaması ve coder değişimi orada.
+            return self.cmd_model(model_name)
+
+        self.io.tool_output("Sonraki başlatmada bu model kullanılacak.")
+
     def cmd_permissions(self, args):
         """Show the agent's permission mode and rules."""  # noqa
         coder = self._require_agent()
