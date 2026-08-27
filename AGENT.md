@@ -67,6 +67,58 @@ kendi indiriyor, ve `uv tool install` uygulamayı senin görmediğin izole bir
 ortama kuruyor. Sonuç kullanıcı açısından Claude Code'a en yakın deneyim:
 bir kurulum komutu, sonra sadece `aider`.
 
+### RHEL 8 / RHEL 9 (ve diğer Linux)
+
+**Derleme gerekmez.** Bağımlılıkların tamamının hazır `manylinux` wheel'i var —
+x86_64 ve aarch64, Python 3.11 ve 3.12 için. `gcc`, `python3-devel` ya da
+`rust` kurmana gerek yok.
+
+**Python sürümü tek gerçek engel:**
+
+| Dağıtım | Varsayılan `python3` | Yeterli mi |
+|---|---|---|
+| RHEL 8 | 3.6 | hayır |
+| RHEL 9 | 3.9 | hayır |
+
+Aider `>=3.10` istiyor. İki çözüm var:
+
+*Yol 1 — `kur.sh` (önerilen).* `uv` uygun Python'u kendisi indirir, sistem
+Python'una hiç dokunmaz. RHEL 8'de bile ek paket gerekmez:
+
+```bash
+sudo dnf install -y git
+curl -fsSL https://raw.githubusercontent.com/alparslanozturk77/aider/claude-code-layer/kur.sh | sh
+```
+
+*Yol 2 — AppStream Python ile elle.* Sistemde bir Python istiyorsan:
+
+```bash
+sudo dnf install -y git python3.12 python3.12-pip
+git clone https://github.com/alparslanozturk77/aider.git && cd aider
+python3.12 -m venv .venv && .venv/bin/pip install -e .
+```
+
+RHEL 8'de `python3.12` yoksa `python3.11` de çalışır.
+
+**İsteğe bağlı sistem paketleri:**
+
+- `ripgrep` — Grep aracı varsa onu kullanır, yoksa saf Python yedeğine düşer.
+  Sonuç aynı, büyük depolarda yalnızca daha yavaş. RHEL temel depolarında yok;
+  EPEL'den gelir. Kurmasan da olur.
+- `libsndfile` / `portaudio` — yalnızca aider'ın sesli giriş özelliği için.
+  Yoksa import korumalı biçimde atlanır ve aider normal açılır. Agent modu
+  bunları hiç kullanmaz.
+
+**Çevrimdışı / kapalı ağ.** Kurum sunucusu PyPI'a çıkamıyorsa wheel'leri
+internete çıkabilen bir makinede indirip taşı:
+
+```bash
+pip download -d wheels -r requirements.txt \
+    --platform manylinux_2_28_x86_64 --python-version 3.12 --only-binary=:all:
+# hedef makinede:
+pip install --no-index --find-links wheels -e .
+```
+
 ### Elle kurulum (geliştirme için)
 
 ```bash
