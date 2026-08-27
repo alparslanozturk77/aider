@@ -114,7 +114,10 @@ class SkillTool(Tool):
         "type": "object",
         "properties": {
             "skill": {"type": "string", "description": "Beceri listesindeki tam ad"},
-            "args": {"type": "string", "description": "Beceriye iletilecek isteğe bağlı argümanlar"},
+            "args": {
+                "type": "string",
+                "description": "Beceriye iletilecek isteğe bağlı argümanlar",
+            },
         },
         "required": ["skill"],
     }

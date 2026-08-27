@@ -61,7 +61,9 @@ yükle ve talimatlarını izle.
     files_content_prefix = """Şu dosyalar sohbet bağlamına eklendi:
 """
 
-    files_no_full_files = "Henüz bağlama eklenmiş dosya yok. İhtiyacın olanı Read/Glob/Grep ile kendin bul."
+    files_no_full_files = (
+        "Henüz bağlama eklenmiş dosya yok. İhtiyacın olanı Read/Glob/Grep ile kendin bul."
+    )
 
     repo_content_prefix = """Git deposundaki bazı dosyaların özetleri aşağıda.
 Bunlar yalnızca yön bulman için; içeriklerini görmek istediğin dosyayı Read ile oku.

@@ -20,8 +20,8 @@ class ToolContext:
         self.coder = coder
         self.io = coder.io
         self.root = coder.root
-        self.todos = None       # TodoList, AgentCoder tarafından atanır
-        self.skills = None      # SkillLibrary, AgentCoder tarafından atanır
+        self.todos = None  # TodoList, AgentCoder tarafından atanır
+        self.skills = None  # SkillLibrary, AgentCoder tarafından atanır
         self.plan_mode = False
         self.approved_plan = None
         # Bu oturumda kullanıcının "hep izin ver" dediği araç adları

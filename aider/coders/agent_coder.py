@@ -67,7 +67,9 @@ class AgentCoder(Coder):
         lines = super().get_announcements()
         n = len(self.ctx.skills.skills)
         lines.append(f"Araçlar: {', '.join(self.registry.names())}")
-        lines.append(f"Beceriler: {n} yüklendi" + (f" ({', '.join(self.ctx.skills.skills)})" if n else ""))
+        lines.append(
+            f"Beceriler: {n} yüklendi" + (f" ({', '.join(self.ctx.skills.skills)})" if n else "")
+        )
         if self.plan_mode:
             lines.append("Plan modu AÇIK — onay alınana dek dosya değiştirilmez")
         return lines
@@ -127,7 +129,9 @@ class AgentCoder(Coder):
 
             self.partial_response_content = ""
             self.multi_response_content = ""
-            self.mdstream = self.io.get_assistant_mdstream() if (self.show_pretty() and self.stream) else None
+            self.mdstream = (
+                self.io.get_assistant_mdstream() if (self.show_pretty() and self.stream) else None
+            )
 
             try:
                 content, tool_calls = self._one_turn(working, tools)
@@ -169,9 +173,7 @@ class AgentCoder(Coder):
                 working.append(tool_msg)
                 turn_messages.append(tool_msg)
         else:
-            self.io.tool_warning(
-                f"{self.max_iterations} araç turu sınırına ulaşıldı, duruldu."
-            )
+            self.io.tool_warning(f"{self.max_iterations} araç turu sınırına ulaşıldı, duruldu.")
 
         self.io.tool_output()
         self.show_usage_report()
@@ -298,8 +300,7 @@ class AgentCoder(Coder):
             args = json.loads(raw_args) if raw_args.strip() else {}
         except json.JSONDecodeError as err:
             return (
-                f"Hata: {name} argümanları geçerli JSON değil ({err}). "
-                f"Gelen: {raw_args[:500]}"
+                f"Hata: {name} argümanları geçerli JSON değil ({err}). " f"Gelen: {raw_args[:500]}"
             )
 
         if name not in self.registry:

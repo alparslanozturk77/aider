@@ -261,9 +261,7 @@ class TestSkills(unittest.TestCase):
     def _make_skill(self, name, desc, body="Adım 1: bir şey yap."):
         d = self.skills_dir / name
         d.mkdir()
-        (d / "SKILL.md").write_text(
-            f"---\nname: {name}\ndescription: {desc}\n---\n\n{body}\n"
-        )
+        (d / "SKILL.md").write_text(f"---\nname: {name}\ndescription: {desc}\n---\n\n{body}\n")
 
     def test_frontmatter_parsing(self):
         meta, body = _parse_frontmatter("---\nname: x\ndescription: y\n---\n\ngövde\n")
@@ -493,9 +491,7 @@ class TestAgentLoop(unittest.TestCase):
         coder = self._coder(
             [
                 FakeMessage(
-                    tool_calls=[
-                        FakeToolCall("c1", "Read", json.dumps({"file_path": "veri.txt"}))
-                    ]
+                    tool_calls=[FakeToolCall("c1", "Read", json.dumps({"file_path": "veri.txt"}))]
                 ),
                 FakeMessage(content="Dosyayı okudum."),
             ]

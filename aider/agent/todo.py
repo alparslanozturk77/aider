@@ -47,8 +47,14 @@ class TodoWriteTool(Tool):
                 "items": {
                     "type": "object",
                     "properties": {
-                        "content": {"type": "string", "description": "Görev, emir kipiyle: 'Testleri çalıştır'"},
-                        "activeForm": {"type": "string", "description": "Sürüyor hali: 'Testler çalıştırılıyor'"},
+                        "content": {
+                            "type": "string",
+                            "description": "Görev, emir kipiyle: 'Testleri çalıştır'",
+                        },
+                        "activeForm": {
+                            "type": "string",
+                            "description": "Sürüyor hali: 'Testler çalıştırılıyor'",
+                        },
                         "status": {"type": "string", "enum": list(STATUSES)},
                     },
                     "required": ["content", "activeForm", "status"],
@@ -68,7 +74,9 @@ class TodoWriteTool(Tool):
                 raise ToolError(f"todos[{i}] bir nesne olmalı")
             status = t.get("status", "pending")
             if status not in STATUSES:
-                raise ToolError(f"todos[{i}].status geçersiz: {status}. Geçerli: {', '.join(STATUSES)}")
+                raise ToolError(
+                    f"todos[{i}].status geçersiz: {status}. Geçerli: {', '.join(STATUSES)}"
+                )
             content = t.get("content")
             if not content:
                 raise ToolError(f"todos[{i}].content zorunlu")

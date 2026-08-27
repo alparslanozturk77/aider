@@ -18,9 +18,22 @@ DEFAULT_READ_LIMIT = 2000
 
 # Grep/Glob taramalarında hiçbir zaman girilmeyecek dizinler.
 SKIP_DIRS = {
-    ".git", ".hg", ".svn", "node_modules", "__pycache__", ".venv", "venv",
-    ".mypy_cache", ".pytest_cache", ".ruff_cache", "dist", "build",
-    ".aider.tags.cache.v4", ".tox", ".next", "target",
+    ".git",
+    ".hg",
+    ".svn",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "dist",
+    "build",
+    ".aider.tags.cache.v4",
+    ".tox",
+    ".next",
+    "target",
 }
 
 
@@ -65,9 +78,18 @@ class ReadTool(PathTool):
     parameters = {
         "type": "object",
         "properties": {
-            "file_path": {"type": "string", "description": "Okunacak dosyanın yolu (mutlak ya da proje köküne göreli)"},
-            "offset": {"type": "integer", "description": "Kaçıncı satırdan başlanacağı (1 tabanlı)"},
-            "limit": {"type": "integer", "description": f"Okunacak satır sayısı (varsayılan {DEFAULT_READ_LIMIT})"},
+            "file_path": {
+                "type": "string",
+                "description": "Okunacak dosyanın yolu (mutlak ya da proje köküne göreli)",
+            },
+            "offset": {
+                "type": "integer",
+                "description": "Kaçıncı satırdan başlanacağı (1 tabanlı)",
+            },
+            "limit": {
+                "type": "integer",
+                "description": f"Okunacak satır sayısı (varsayılan {DEFAULT_READ_LIMIT})",
+            },
         },
         "required": ["file_path"],
     }
@@ -96,9 +118,7 @@ class ReadTool(PathTool):
             return f"(offset {start}, dosyada yalnızca {len(lines)} satır var)"
 
         width = len(str(start + len(chunk) - 1))
-        body = "\n".join(
-            f"{str(start + i).rjust(width)}\t{line}" for i, line in enumerate(chunk)
-        )
+        body = "\n".join(f"{str(start + i).rjust(width)}\t{line}" for i, line in enumerate(chunk))
 
         # Okunan dosyayı aider'ın sohbet bağlamına da ekle ki repo haritası ve
         # otomatik commit mantığı dosyadan haberdar olsun.
@@ -165,7 +185,10 @@ class EditTool(PathTool):
             "file_path": {"type": "string", "description": "Düzenlenecek dosyanın yolu"},
             "old_string": {"type": "string", "description": "Değiştirilecek birebir metin"},
             "new_string": {"type": "string", "description": "Yerine yazılacak metin"},
-            "replace_all": {"type": "boolean", "description": "Tüm eşleşmeleri değiştir (varsayılan false)"},
+            "replace_all": {
+                "type": "boolean",
+                "description": "Tüm eşleşmeleri değiştir (varsayılan false)",
+            },
         },
         "required": ["file_path", "old_string", "new_string"],
     }
@@ -198,7 +221,11 @@ class EditTool(PathTool):
         if not ctx.confirm(self.name, rel, "Dosyayı düzenle?"):
             return "Kullanıcı bu düzenlemeyi reddetti. Devam etmeden önce ona danış."
 
-        new_text = text.replace(old_string, new_string) if replace_all else text.replace(old_string, new_string, 1)
+        new_text = (
+            text.replace(old_string, new_string)
+            if replace_all
+            else text.replace(old_string, new_string, 1)
+        )
         try:
             p.write_text(new_text, encoding="utf-8")
         except OSError as err:
@@ -224,8 +251,14 @@ class BashTool(Tool):
         "type": "object",
         "properties": {
             "command": {"type": "string", "description": "Çalıştırılacak kabuk komutu"},
-            "description": {"type": "string", "description": "Komutun ne yaptığının 5-10 kelimelik özeti"},
-            "timeout": {"type": "integer", "description": "Saniye cinsinden zaman aşımı (varsayılan 120, en fazla 600)"},
+            "description": {
+                "type": "string",
+                "description": "Komutun ne yaptığının 5-10 kelimelik özeti",
+            },
+            "timeout": {
+                "type": "integer",
+                "description": "Saniye cinsinden zaman aşımı (varsayılan 120, en fazla 600)",
+            },
         },
         "required": ["command"],
     }
@@ -284,7 +317,10 @@ class GlobTool(Tool):
         "type": "object",
         "properties": {
             "pattern": {"type": "string", "description": "Eşleştirilecek glob deseni"},
-            "path": {"type": "string", "description": "Aranacak kök dizin (varsayılan: proje kökü)"},
+            "path": {
+                "type": "string",
+                "description": "Aranacak kök dizin (varsayılan: proje kökü)",
+            },
         },
         "required": ["pattern"],
     }
@@ -317,7 +353,10 @@ class GrepTool(Tool):
         "type": "object",
         "properties": {
             "pattern": {"type": "string", "description": "Aranacak regex deseni"},
-            "path": {"type": "string", "description": "Aranacak dosya ya da dizin (varsayılan: proje kökü)"},
+            "path": {
+                "type": "string",
+                "description": "Aranacak dosya ya da dizin (varsayılan: proje kökü)",
+            },
             "glob": {"type": "string", "description": "Dosyaları süzmek için glob, ör. '*.py'"},
             "output_mode": {
                 "type": "string",
@@ -330,8 +369,16 @@ class GrepTool(Tool):
         "required": ["pattern"],
     }
 
-    def run(self, ctx, pattern, path=None, glob=None, output_mode="files_with_matches",
-            case_insensitive=False, head_limit=None):
+    def run(
+        self,
+        ctx,
+        pattern,
+        path=None,
+        glob=None,
+        output_mode="files_with_matches",
+        case_insensitive=False,
+        head_limit=None,
+    ):
         target = Path(path).expanduser() if path else Path(ctx.root)
         if not target.is_absolute():
             target = Path(ctx.root) / target
