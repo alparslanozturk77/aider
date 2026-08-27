@@ -21,6 +21,24 @@ mode: ask
 #   Write(src/**)         src altındaki dosyalara yazma
 #   Edit(*.py)            .py dosyalarını düzenleme
 #
+# DİKKAT — ':*' ile '*' aynı şey değil:
+#
+#   ':*' SÖZCÜK SINIRINDA durur. 'git diff:*' kuralı 'git diff --stat'
+#   komutunu kapsar ama 'git diff-tree' komutunu kapsamaz. Bu bilinçli bir
+#   güvenlik özelliğidir: komut adının yarısı eşleşince kural tetiklenmesin.
+#
+#   Dosya adı ya da yol öneki eşleştirecekseniz ':*' İŞE YARAMAZ. Örneğin
+#   'playbooks/duzelt_:*' kuralı 'playbooks/duzelt_ntp.yml' dosyasını
+#   YAKALAMAZ, çünkü '_' sonrası boşluk yok. Bu durumda glob kullanın:
+#
+#       Bash(ansible-playbook*playbooks/duzelt_*)
+#
+#   Aynı tuzak yerleşik deny listesinde de yaşandı: 'mkfs:*' kuralı
+#   'mkfs.ext4' komutunu kaçırıyordu, 'mkfs*' olarak düzeltildi.
+#
+#   Yazdığınız her deny kuralını sınayın:
+#       /permissions   ile kuralları görün, sonra komutu deneyin
+#
 # Güvenlik notu: zincirlenmiş komutlarda HER parça izinli olmalıdır.
 # "git diff && npm publish" yalnızca ikisi de izinliyse çalışır. Komut ikamesi
 # içeren komutlar ($(...) ya da backtick) hiçbir zaman otomatik onaylanmaz.

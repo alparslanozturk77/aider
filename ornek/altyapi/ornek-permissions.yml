@@ -1,0 +1,27 @@
+# Filo operasyonları için .aider/permissions.yml eklentisi.
+#
+# Asıl koruma 'deny' listesindedir: ad-hoc modüller modelin ürettiği rastgele
+# kabuk kodunun tüm filoda çalışması demektir.
+#
+# Bu forkun izin sistemi zincirlenmiş komutları parça parça değerlendirdiği
+# için "ansible-playbook ... && ansible all -m shell ..." da yakalanır.
+
+allow:
+  # Salt-okunur keşif
+  - Bash(ansible-inventory:*)
+  - Bash(ansible all -m ping:*)
+  # Durum toplayan playbook'lar. DİKKAT: burada ':*' değil glob '*' kullanılıyor.
+  # ':*' öneki sözcük sınırında durur, yani 'durum_:*' kuralı 'durum_ntp.yml'
+  # dosyasını YAKALAMAZ. Dosya adı öneki eşleştirirken hep glob kullan.
+  - Bash(ansible-playbook*playbooks/durum_*)
+
+deny:
+  # Ad-hoc modüller — filo geneli rastgele komut çalıştırma
+  - Bash(ansible all -m shell:*)
+  - Bash(ansible all -m command:*)
+  - Bash(ansible all -m raw:*)
+  - Bash(ansible -m shell:*)
+  - Bash(ansible -m command:*)
+  - Bash(ansible -m raw:*)
+  # Yan etkili playbook'lar onaysız çalışmasın (glob — yukarıdaki nota bak)
+  - Bash(ansible-playbook*playbooks/duzelt_*)

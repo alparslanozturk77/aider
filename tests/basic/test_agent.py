@@ -1192,3 +1192,103 @@ class TestShippedSkills(unittest.TestCase):
             self.assertEqual(
                 name, skill.path.parent.name, f"{name}: frontmatter adı dizin adıyla uyuşmuyor"
             )
+
+
+class TestPrefixVersusGlob(unittest.TestCase):
+    """':*' ile '*' arasındaki fark, sessizce delik bırakabildiği için teste bağlı.
+
+    ':*' öneki sözcük sınırında durur — komut adının yarısı eşleşince kural
+    tetiklenmesin diye. Ama bu, dosya adı öneki eşleştirmeyi imkânsız kılıyor.
+    Bu ayrım iki kez gerçek hataya yol açtı: yerleşik deny listesindeki
+    'mkfs:*' kuralı 'mkfs.ext4' komutunu kaçırıyordu, ve örnek altyapı
+    kurallarındaki 'playbooks/duzelt_:*' kuralı 'duzelt_ntp.yml' dosyasını.
+    """
+
+    def test_colon_star_stops_at_word_boundary(self):
+        # use_default_deny=False: yerleşik liste zaten 'mkfs*' içeriyor ve
+        # sözdizimini izole edemezdik.
+        p = PermissionSet(deny=["Bash(mkfs:*)"], mode=MODE_AUTO, use_default_deny=False)
+        # Boşlukla ayrılan argüman: yakalanır.
+        self.assertEqual(p.decide("Bash", {"command": "mkfs /dev/sda"}, True), DENY)
+        # Nokta ile devam eden alt komut: yakalanmaz.
+        self.assertEqual(p.decide("Bash", {"command": "mkfs.ext4 /dev/sda"}, True), ALLOW)
+
+    def test_glob_matches_across_word_boundary(self):
+        p = PermissionSet(deny=["Bash(mkfs*)"], mode=MODE_AUTO, use_default_deny=False)
+        self.assertEqual(p.decide("Bash", {"command": "mkfs.ext4 /dev/sda"}, True), DENY)
+
+    def test_builtin_deny_list_uses_glob_for_mkfs(self):
+        # Bu tam olarak sahada kaçırılan komuttu; yerleşik liste artık yakalamalı.
+        p = PermissionSet(mode=MODE_AUTO)
+        self.assertEqual(p.decide("Bash", {"command": "mkfs.ext4 /dev/sda"}, True), DENY)
+
+    def test_path_prefix_needs_glob_not_colon_star(self):
+        cmd = "ansible-playbook -i envanter/hosts.yml playbooks/duzelt_ntp.yml"
+
+        colon = PermissionSet(deny=["Bash(ansible-playbook*playbooks/duzelt_:*)"], mode=MODE_AUTO)
+        self.assertEqual(colon.decide("Bash", {"command": cmd}, True), ALLOW)
+
+        glob = PermissionSet(deny=["Bash(ansible-playbook*playbooks/duzelt_*)"], mode=MODE_AUTO)
+        self.assertEqual(glob.decide("Bash", {"command": cmd}, True), DENY)
+
+    def test_glob_rule_is_not_over_broad(self):
+        p = PermissionSet(deny=["Bash(ansible-playbook*playbooks/duzelt_*)"], mode=MODE_AUTO)
+        # Farklı playbook etkilenmemeli
+        self.assertEqual(
+            p.decide("Bash", {"command": "ansible-playbook playbooks/durum_ntp.yml"}, True), ALLOW
+        )
+        # Farklı komut etkilenmemeli
+        self.assertEqual(
+            p.decide("Bash", {"command": "echo playbooks/duzelt_ntp.yml"}, True), ALLOW
+        )
+
+
+class TestInfraTemplateRules(unittest.TestCase):
+    """ornek/altyapi/ altındaki kuralların gerçekten koruduğunu doğrula."""
+
+    def setUp(self):
+        rules = yaml.safe_load(
+            (REPO_ROOT / "ornek" / "altyapi" / "ornek-permissions.yml").read_text(encoding="utf-8")
+        )
+        self.p = PermissionSet(allow=rules["allow"], deny=rules["deny"], mode=MODE_AUTO)
+
+    def test_adhoc_fleet_shell_is_denied(self):
+        # En tehlikeli kalıp: modelin ürettiği kabuk kodunun tüm filoda çalışması.
+        for cmd in [
+            'ansible all -m shell -a "rm -rf /"',
+            "ansible all -m command -a uptime",
+            "ansible all -m raw -a whoami",
+        ]:
+            self.assertEqual(self.p.decide("Bash", {"command": cmd}, True), DENY, cmd)
+
+    def test_mutating_playbook_is_denied(self):
+        for cmd in [
+            "ansible-playbook -i envanter/hosts.yml playbooks/duzelt_ntp.yml",
+            "ansible-playbook playbooks/duzelt_ntp.yml --check",
+        ]:
+            self.assertEqual(self.p.decide("Bash", {"command": cmd}, True), DENY, cmd)
+
+    def test_readonly_playbook_is_allowed(self):
+        self.assertEqual(
+            self.p.decide(
+                "Bash",
+                {"command": "ansible-playbook -i envanter/hosts.yml playbooks/durum_ntp.yml"},
+                True,
+            ),
+            ALLOW,
+        )
+
+    def test_chaining_cannot_smuggle_adhoc_shell(self):
+        cmd = "ansible-playbook playbooks/durum_ntp.yml && ansible all -m shell -a x"
+        self.assertEqual(self.p.decide("Bash", {"command": cmd}, True), DENY)
+
+
+class TestInfraTemplateSkill(unittest.TestCase):
+    def test_skill_loads(self):
+        from aider.agent.skills import SkillLibrary
+
+        lib = SkillLibrary([REPO_ROOT / "ornek" / "altyapi" / "skills"])
+        self.assertIn("filo-durum-kontrolu", lib.skills)
+        skill = lib.get("filo-durum-kontrolu")
+        self.assertEqual(skill.name, skill.path.parent.name)
+        self.assertGreater(len(skill.body), 1000)
