@@ -5,9 +5,14 @@ SKILL.md. Sistem promptuna yalnızca ad + açıklama enjekte edilir (ucuz); göv
 ancak model beceriyi Skill aracıyla çağırınca yüklenir (progressive disclosure).
 
 Aranan yerler, öncelik sırasıyla:
-  1. <proje>/.aider/skills/
-  2. ~/.aider/skills/
-  3. AIDER_SKILLS_PATH ortam değişkenindeki iki nokta ile ayrılmış dizinler
+  1. <proje>/.aider/skills/   kişisel, .gitignore'daki .aider* ile depo dışında
+  2. <proje>/aider-skills/    takımla paylaşılan, depoya girer
+  3. ~/.aider/skills/         tüm projelerde geçerli kişisel beceriler
+  4. AIDER_SKILLS_PATH ortam değişkenindeki iki nokta ile ayrılmış dizinler
+
+Sıra bilinçli: aynı adlı bir beceri hem kişisel hem paylaşılan dizinde varsa
+kişisel olan kazanır, yani paylaşılan bir beceriyi lokalde geçici olarak
+ezebilirsin.
 """
 
 import os
@@ -96,8 +101,18 @@ class SkillLibrary:
         return self.skills.get(name)
 
 
+# Depoya girebilen, paylaşılan beceri dizini. Gizli dizin değil, çünkü
+# .gitignore'daki .aider* kuralı .aider/skills/ altını depo dışında bırakıyor.
+SHARED_SKILLS_DIR = "aider-skills"
+
+
 def default_skill_roots(project_root):
-    roots = [Path(project_root) / ".aider" / "skills", Path.home() / ".aider" / "skills"]
+    project_root = Path(project_root)
+    roots = [
+        project_root / ".aider" / "skills",
+        project_root / SHARED_SKILLS_DIR,
+        Path.home() / ".aider" / "skills",
+    ]
     extra = os.environ.get("AIDER_SKILLS_PATH", "")
     roots += [Path(p) for p in extra.split(os.pathsep) if p.strip()]
     return roots

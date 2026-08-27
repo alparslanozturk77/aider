@@ -3,6 +3,8 @@
 import json
 import traceback
 
+from .permissions import ALLOW, DENY, suggest_rule
+
 
 class ToolError(Exception):
     """Modele geri bildirilecek, kurtarılabilir araç hatası."""
@@ -24,27 +26,48 @@ class ToolContext:
         self.skills = None  # SkillLibrary, AgentCoder tarafından atanır
         self.plan_mode = False
         self.approved_plan = None
-        # Bu oturumda kullanıcının "hep izin ver" dediği araç adları
-        self.always_allow = set()
+        # İzin kuralları; AgentCoder tarafından atanır.
+        self.permissions = None
         # Bash için oturum boyunca hatırlanan çalışma dizini
         self.cwd = coder.root
+        # confirm() çağrısı sırasında değerlendirilen araç çağrısının argümanları.
+        # Araçlar confirm'e yalnızca bir konu metni verdiği için, izin kurallarının
+        # ihtiyaç duyduğu ham argümanları buradan taşıyoruz.
+        self._pending_args = {}
 
-    def confirm(self, tool_name, subject, question=None):
-        """Yan etkili araçlar için kullanıcı onayı al.
+    def confirm(self, tool_name, subject, question=None, args=None):
+        """Yan etkili bir araç çağrısı için izin kararı ver.
 
-        --yes-always ile çalışıldığında aider'ın io katmanı zaten otomatik
-        onaylar; burada ayrıca oturum-içi "hep izin ver" kaydı tutuyoruz.
+        Kural tabanlı izin sistemi önce değerlendirilir: reddedilen çağrılar
+        kullanıcıya hiç sorulmadan engellenir, izinli olanlar sorulmadan geçer.
+        Karar 'ask' ise kullanıcıya sorulur ve 'bir daha sorma' yanıtı oturumluk
+        bir izin kuralına dönüştürülür.
         """
-        if tool_name in self.always_allow:
-            return True
+        args = args if args is not None else self._pending_args
+
+        if self.permissions:
+            decision = self.permissions.decide(tool_name, args, mutating=True)
+            if decision == DENY:
+                self.io.tool_error(f"İzin reddedildi: {tool_name} — {subject}")
+                return False
+            if decision == ALLOW:
+                return True
 
         question = question or f"{tool_name} çalıştırılsın mı?"
-        ok = self.io.confirm_ask(
-            question,
-            subject=subject,
-            allow_never=True,
-        )
-        return bool(ok)
+        res = self.io.confirm_ask(question, subject=subject, allow_never=True)
+
+        # "Bir daha sorma" yanıtı aider'da False döner ve soru never_prompts'a
+        # yazılır; o kayıt (soru, konu) çiftine bağlı olduğu için desen bazlı
+        # çalışmaz. Kendi kural listemize çevirip gerçekten kullanışlı yapıyoruz.
+        if self.io.never_prompts and (question, subject) in self.io.never_prompts:
+            rule = suggest_rule(tool_name, args)
+            self.io.never_prompts.discard((question, subject))
+            if self.permissions:
+                self.permissions.add_session_allow(rule)
+                self.io.tool_output(f"Bu oturum için izin kuralı eklendi: {rule}")
+            return True
+
+        return bool(res)
 
 
 class ToolRegistry:
@@ -92,6 +115,10 @@ class ToolRegistry:
 
         if not isinstance(args, dict):
             return f"Hata: {name} argümanları JSON nesnesi olmalı, gelen: {type(args).__name__}"
+
+        # İzin kuralları ham argümanlara bakar; araçlar confirm()'e yalnızca
+        # okunabilir bir konu metni verdiği için argümanları bağlama taşıyoruz.
+        ctx._pending_args = args
 
         try:
             result = tool.run(ctx, **args)

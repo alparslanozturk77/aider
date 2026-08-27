@@ -33,12 +33,14 @@ python3.12 -m venv .venv
 .venv/bin/pip install -e .
 ```
 
-Kurum endpoint'ini tanımla:
+Kurum endpoint'ini tanımla — şablonların tamamı `ornek/` dizininde:
 
 ```bash
-cp .env.ornek .env                                    # endpoint + anahtar
-cp .aider.conf.yml.ornek .aider.conf.yml              # model + agent ayarları
-cp .aider.model.metadata.json.ornek .aider.model.metadata.json  # bağlam penceresi
+cp ornek/env                        .env
+cp ornek/aider.conf.yml             .aider.conf.yml
+cp ornek/aider.model.settings.yml   .aider.model.settings.yml
+cp ornek/aider.model.metadata.json  .aider.model.metadata.json
+mkdir -p .aider && cp ornek/permissions.yml .aider/permissions.yml
 ```
 
 `.env` içindeki `OPENAI_API_BASE` ve `OPENAI_API_KEY` değerlerini kurumun
@@ -78,8 +80,7 @@ curl -s "$OPENAI_API_BASE/models" \
 | `Skill` | Bir beceriyi bağlama yükler | hayır |
 | `ExitPlanMode` | Planı onaya sunar (yalnızca plan modunda) | **evet** |
 
-Onay isteyen araçlar `--yes-always` ile otomatik onaylanır. Kurumsal ortamda
-bunu açmadan önce iki kez düşün: model onaysız komut çalıştırabilir hale gelir.
+Onay davranışı izin sistemiyle yönetilir; aşağıya bak.
 
 `Grep` ve `Glob`, `.git`, `node_modules`, `__pycache__`, `venv`, `dist` gibi
 dizinleri hiçbir zaman taramaz. Araç çıktıları bağlam penceresini yutmasın diye
@@ -121,12 +122,105 @@ olmayan beceriler sessizce atlanır.
 
 Aranan dizinler, öncelik sırasıyla:
 
-1. `<proje>/.aider/skills/` — projeye özgü, depoya girer, takımla paylaşılır
-2. `~/.aider/skills/` — kişisel, tüm projelerde geçerli
-3. `AIDER_SKILLS_PATH` içindeki dizinler — kurum geneli ortak beceriler
+1. `<proje>/.aider/skills/` — kişisel, depoya **girmez** (`.aider*` ignore'da)
+2. `<proje>/aider-skills/` — takımla paylaşılan, depoya girer
+3. `~/.aider/skills/` — tüm projelerde geçerli kişisel beceriler
+4. `AIDER_SKILLS_PATH` içindeki dizinler — kurum geneli ortak beceriler
 
-Aynı isim birden fazla yerde varsa **ilk kök kazanır**: proje becerisi kişisel
-beceriyi ezer.
+Aynı isim birden fazla yerde varsa **ilk kök kazanır**. Sıra bilinçli: paylaşılan
+bir beceriyi lokalde geçici olarak ezebilirsin.
+
+Yeni beceri oluşturmak için `/skills new <ad>` — iskeleti `aider-skills/`
+altına, yani depoya girebilen konuma yazar. `/skills` ile diskten yeniden
+yükleyip aider'ı kapatmadan test edersin.
+
+Depodaki `aider-skills/kod-inceleme` ve `aider-skills/test-yaz` çalışan
+örneklerdir; kendi becerini yazarken biçim referansı olarak kullan.
+
+## İzin sistemi
+
+Üç mod var:
+
+```bash
+aider --agent            # ask  — yan etkili her araçta sorar (varsayılan)
+aider --agent --auto     # auto — reddedilmedikçe sormaz
+aider --agent --plan     # plan — Write/Edit/Bash modele hiç sunulmaz
+```
+
+Asıl işi kural listesi yapar. `.aider/permissions.yml`:
+
+```yaml
+mode: ask
+
+allow:
+  - Bash(git diff:*)      # "git diff" ile başlayan komutlar
+  - Bash(pytest:*)
+  - Bash(npm test)        # tam olarak bu komut
+  - Write(src/**)         # src altına yazma
+  - Edit(*.py)
+
+deny:
+  - Bash(npm publish:*)
+  - Bash(kubectl delete:*)
+```
+
+`allow` listesindeki çağrılar sorulmadan çalışır, `deny` listesindekiler
+sorulmadan engellenir. Reddetme her zaman izni yener — `auto` modda bile.
+
+Kurallar iki dosyadan birleştirilir: `~/.aider/permissions.yml` (kişisel) ve
+`<proje>/.aider/permissions.yml` (projeye özgü). Komut satırındaki
+`--permission-mode` dosyadaki modu yener.
+
+Oturum içinde bir komuta "bir daha sorma" dersen, o çağrı bir kurala çevrilip
+oturumluk izin listesine eklenir. `/permissions` ile o anki kuralları görürsün.
+Kalıcı yapmak için dosyaya yazman gerekir.
+
+### Kaçış vektörleri kapalı
+
+İzin sistemi bir güvenlik sınırı olduğu için şu üç yol kasıtlı olarak tıkandı:
+
+- **Zincirleme.** `git diff && npm publish` komutunda her parça ayrı ayrı
+  değerlendirilir. `Bash(git diff:*)` kuralı bu komutu onaylamaz.
+- **Komut ikamesi.** `$(...)`, backtick ve `<(...)` içeren komutlar statik
+  olarak çözülemediği için hiçbir zaman otomatik onaylanmaz.
+- **Sözcük sınırı.** `Bash(git diff:*)` kuralı `git diff-tree` komutunu
+  kapsamaz; önek eşleşmesi boşlukta durur.
+
+Kaldırılamayan yerleşik bir reddetme listesi de var: `rm -rf /`, `sudo`,
+`mkfs*`, `dd if=*`, `git push`, `git reset --hard`, ve kabuğa boru
+(`curl ... | sh` kalıbı). Bunlar `auto` modda da engellenir.
+
+## MCP
+
+Claude Code ile aynı `.mcp.json` biçimi kullanılır — mevcut dosyalarını
+doğrudan kopyalayabilirsin:
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres"],
+      "env": {"DATABASE_URL": "postgres://..."}
+    }
+  }
+}
+```
+
+Sunucular oturum başında başlatılır, araçları `mcp__<sunucu>__<araç>` adıyla
+modele sunulur ve oturum bitince süreçler kapatılır.
+
+| Komut | Ne yapar |
+|---|---|
+| `/mcp` | Bağlı sunucuları ve araçlarını listeler |
+| `/mcp reload` | Sunucuları durdurup yeniden başlatır |
+
+Sunucunun `readOnlyHint` verdiği araçlar onay sorulmadan çalışır; geri kalanı
+izin sisteminden geçer.
+
+**Dayanıklılık:** bir sunucunun başlatılamaması oturumu düşürmez — hata
+bildirilir, diğer sunucularla devam edilir. Yanıt vermeyen sunucu zaman aşımına
+uğrar; istemci arka planda okuyan bir iş parçacığı kullandığı için bloke olmaz.
 
 ## Plan modu
 
@@ -151,7 +245,12 @@ Oturum içinde `/plan` ile açıp kapatabilirsin.
 | `/agent` | Agent moduna geçer |
 | `/plan` | Plan modunu açar/kapatır |
 | `/skills` | Becerileri listeler ve diskten yeniden yükler |
+| `/skills new <ad>` | Yeni beceri iskeleti oluşturur |
+| `/mcp` | MCP sunucularını ve araçlarını listeler |
+| `/mcp reload` | MCP sunucularını yeniden başlatır |
+| `/permissions` | İzin modunu ve kurallarını gösterir |
 | `/todo` | Mevcut görev listesini gösterir |
+| `/model <ad>` | Modeli değiştirir (aider'ın kendi komutu) |
 
 `/skills` beceriyi yeniden okuduğu için, `SKILL.md` dosyasını düzenleyip aider'ı
 yeniden başlatmadan test edebilirsin.
@@ -162,6 +261,8 @@ yeniden başlatmadan test edebilirsin.
 |---|---|---|
 | `--agent` | — | Agent moduna geçer (`--edit-format agent` ile aynı) |
 | `--plan` | `false` | Plan modunda başlar |
+| `--auto` | — | `--permission-mode auto` kısayolu |
+| `--permission-mode MOD` | `ask` | `plan`, `ask` ya da `auto` |
 | `--max-tool-iterations N` | `50` | Tek mesajda izin verilen azami model turu |
 
 `--max-tool-iterations` bir emniyet sübabıdır: model araç döngüsünde takılıp
@@ -171,11 +272,13 @@ kalırsa sınıra ulaşıldığında durur ve uyarı basar.
 
 ```
 aider/agent/
-  registry.py   ToolRegistry + ToolContext + ToolError
-  tools.py      Read, Write, Edit, Bash, Glob, Grep
-  skills.py     SKILL.md keşfi, frontmatter ayrıştırma, Skill aracı
-  todo.py       Görev listesi + TodoWrite aracı
-  plan.py       Plan modu + ExitPlanMode aracı
+  registry.py     ToolRegistry + ToolContext + ToolError
+  tools.py        Read, Write, Edit, Bash, Glob, Grep
+  permissions.py  Kural tabanlı izin sistemi
+  mcp.py          MCP istemcisi (stdio, JSON-RPC 2.0)
+  skills.py       SKILL.md keşfi, frontmatter ayrıştırma, Skill aracı
+  todo.py         Görev listesi + TodoWrite aracı
+  plan.py         Plan modu + ExitPlanMode aracı
 
 aider/coders/
   agent_coder.py     Araç döngüsü (AgentCoder)
@@ -192,7 +295,7 @@ Upstream aider dosyalarına dokunuş bilinçli olarak minimumda tutuldu:
 - `coders/__init__.py` — `AgentCoder` kaydı
 - `args.py` — `--agent`, `--plan`, `--max-tool-iterations`
 - `main.py` — agent'a özgü kwarg'ların yalnızca agent coder'a geçirilmesi
-- `commands.py` — `/agent`, `/plan`, `/skills`, `/todo`
+- `commands.py` — `/agent`, `/plan`, `/skills`, `/mcp`, `/permissions`, `/todo`
 
 Bu ayrım kasıtlıdır: upstream aider'dan `git merge` yaptığında çakışma yüzeyi
 beş küçük noktayla sınırlı kalır.
@@ -210,9 +313,19 @@ düzeltir. Bu, agentic döngünün dayanıklılığının temelidir.
 .venv/bin/python -m pytest tests/basic/test_agent.py -q
 ```
 
-54 test: her aracın mutlu yolu ve hata yolları, beceri keşfi ve öncelik sırası,
-görev listesi doğrulaması, plan modu kısıtları, ve sahte bir modelle uçtan uca
-sürülen araç döngüsü (çoklu araç çağrısı, bozuk JSON, bilinmeyen araç, döngü
-sınırı).
+110 test:
 
-Tüm upstream test takımı da geçmeye devam eder (529 test).
+- **Araçlar** — her aracın mutlu yolu ve hata yolları
+- **Beceriler** — keşif, frontmatter ayrıştırma, kök öncelik sırası
+- **Görev listesi** — doğrulama kuralları
+- **Plan modu** — yan etkili araçların gerçekten sunulmadığı
+- **Araç döngüsü** — sahte modelle uçtan uca: çoklu araç çağrısı, bozuk JSON,
+  bilinmeyen araç, döngü sınırı
+- **İzinler** — kural eşleşmesi ve üç kaçış vektörü (zincirleme, komut ikamesi,
+  sözcük sınırı); ayrıca yerleşik deny listesinin normal komutları
+  engellemediği
+- **MCP** — gerçek alt süreçlerle: el sıkışma, araç keşfi, çağrı gidiş-dönüşü,
+  çöken sunucu, yanıt vermeyen sunucu (zaman aşımı gerçekten uygulanıyor mu),
+  bir sunucunun ölümünün diğerlerini etkilemediği
+
+Tüm upstream test takımı da geçmeye devam eder (toplam 585 test).

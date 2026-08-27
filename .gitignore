@@ -3,20 +3,6 @@
 aider.code-workspace
 *.pyc
 .aider*
-
-# Agent katmanı: gerçek yapılandırma ve sohbet geçmişi yukarıdaki .aider* ile
-# ignore edilir, ama depoya girmesi gereken şablonlar ve paylaşılan beceriler
-# geri alınır.
-!.aider/
-!.aider/skills/
-!.aider/skills/**
-!.aider.conf.yml.ornek
-!.aider.model.metadata.json.ornek
-!.aider.model.settings.yml.ornek
-
-# API anahtarları asla depoya girmemeli. Şablonu .env.ornek'te tutuyoruz.
-.env
-!.env.ornek
 aider_chat.egg-info/
 build
 dist/
@@ -31,4 +17,16 @@ aider/_version.py
 .gitattributes
 tmp.benchmarks/
 .docker_bash_history
-.aider*
+# ---------------------------------------------------------------------------
+# Agent katmanı
+#
+# Gizli bilgi taşıyan gerçek yapılandırma dosyaları. Şablonlar ornek/ dizininde
+# tutuluyor; orası kasıtlı olarak gizli dizin DEĞİL, böylece yukarıdaki .aider*
+# kuralıyla hiç çakışmaz ve negasyon (!) hilesine gerek kalmaz.
+#
+# Bu önemli: aider'ın --add-gitignore-files özelliği .gitignore sonuna kendi
+# .aider* satırını ekleyebiliyor. Negasyona dayansaydık o ekleme şablonları
+# sessizce depodan düşürürdü.
+# ---------------------------------------------------------------------------
+.env
+.mcp.json

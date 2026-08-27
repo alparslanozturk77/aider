@@ -1,0 +1,63 @@
+# Model tanımları — kurum endpoint'i ve yerel modeller bir arada.
+#
+# Bu dosyayı .aider.model.settings.yml olarak kopyala. Aider bilinmeyen
+# modellerin davranışını buradan öğrenir.
+#
+# Oturum içinde modeller arasında geçiş: /model openai/qwen3-coder-yerel
+
+# ---------------------------------------------------------------------------
+# Kurum endpoint'indeki ana model
+# ---------------------------------------------------------------------------
+- name: openai/qwen3-coder
+  edit_format: agent          # agentic araç döngüsü
+  use_repo_map: true          # aider'ın sembol haritası — zayıf modelde çok işe yarar
+  use_temperature: 0
+  streaming: true
+  # Qwen düşünme etiketi üretiyorsa yanıttan ayıklanır.
+  reasoning_tag: think
+  extra_params:
+    # Kurum gateway'i ek başlık istiyorsa buraya ekle.
+    # extra_headers:
+    #   X-Kurum-Proje: ekip-adi
+    max_tokens: 8192
+
+# ---------------------------------------------------------------------------
+# Yerel model (Ollama). Ollama OpenAI uyumlu bir uç sunar: /v1
+#
+# Kullanmadan önce:
+#   ollama pull qwen3-coder:30b
+#
+# .env içinde ya da komut satırında taban adresi değiştir:
+#   aider --model ollama_chat/qwen3-coder:30b
+# ---------------------------------------------------------------------------
+- name: ollama_chat/qwen3-coder:30b
+  edit_format: agent
+  use_repo_map: true
+  use_temperature: 0
+  streaming: true
+  extra_params:
+    # Ollama'nın varsayılan bağlamı küçüktür ve agent döngüsü bağlamı hızla
+    # doldurur. Bunu modelin gerçekten desteklediği değere çek.
+    num_ctx: 65536
+
+# ---------------------------------------------------------------------------
+# Yerel model (llama.cpp / vLLM gibi OpenAI uyumlu sunucu)
+#
+# Araç çağrısı için sunucu tarafında tool parser AÇIK olmalı:
+#   vLLM: --enable-auto-tool-choice --tool-call-parser hermes
+# ---------------------------------------------------------------------------
+- name: openai/qwen3-coder-yerel
+  edit_format: agent
+  use_repo_map: true
+  use_temperature: 0
+  streaming: true
+
+# ---------------------------------------------------------------------------
+# Ucuz yardımcı model: commit mesajı ve sohbet özeti için.
+# Ana modelle aynı olabilir; ayrı ve küçük bir model kullanmak hem hızlı hem
+# ucuzdur. Bu iş agent döngüsü gerektirmez, bu yüzden edit_format: whole.
+# ---------------------------------------------------------------------------
+- name: openai/qwen3-4b
+  edit_format: whole
+  use_repo_map: false
+  use_temperature: 0

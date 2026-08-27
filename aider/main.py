@@ -976,6 +976,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         agent_kwargs = dict(
             plan_mode=args.plan,
             max_iterations=args.max_tool_iterations,
+            permission_mode=args.permission_mode,
         )
 
     try:

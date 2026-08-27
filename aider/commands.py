@@ -1209,23 +1209,152 @@ class Commands:
         else:
             self.io.tool_output("Plan modu KAPALI — düzenlemeler doğrudan uygulanacak.")
 
+    def _require_agent(self):
+        if getattr(self.coder, "edit_format", None) != "agent":
+            self.io.tool_error("Bu komut yalnızca agent modunda çalışır (/agent).")
+            return None
+        return self.coder
+
     def cmd_skills(self, args):
-        """List the skills available to the agent, or reload them from disk."""  # noqa
-        coder = self.coder
-        if getattr(coder, "edit_format", None) != "agent":
-            self.io.tool_error("Beceriler yalnızca agent modunda kullanılır (/agent).")
+        """List agent skills, reload them, or scaffold a new one with: /skills new <name>"""  # noqa
+        coder = self._require_agent()
+        if not coder:
             return
+
+        parts = args.strip().split(maxsplit=1)
+        if parts and parts[0] == "new":
+            return self._new_skill(parts[1].strip() if len(parts) > 1 else "")
 
         coder.ctx.skills.load()
         skills = coder.ctx.skills.skills
         if not skills:
             roots = "\n".join(f"  {r}" for r in coder.ctx.skills.roots)
-            self.io.tool_output(f"Tanımlı beceri yok. Aranan dizinler:\n{roots}")
+            self.io.tool_output(
+                f"Tanımlı beceri yok. Aranan dizinler:\n{roots}\n\n"
+                "Yeni beceri oluşturmak için: /skills new <ad>"
+            )
             return
 
         self.io.tool_output(f"{len(skills)} beceri:")
         for skill in skills.values():
             self.io.tool_output(f"  {skill.name}: {skill.description}")
+            self.io.tool_output(f"    {skill.path}")
+
+    def _new_skill(self, name):
+        """Yeni bir beceri iskeleti oluştur."""
+        import re
+        from pathlib import Path
+
+        if not name:
+            self.io.tool_error("Beceri adı gerekli: /skills new <ad>")
+            return
+        if not re.match(r"^[a-z0-9]+(-[a-z0-9]+)*$", name):
+            self.io.tool_error(
+                f"Geçersiz ad: {name!r}. Küçük harf ve tire kullan, örn: kod-inceleme"
+            )
+            return
+
+        # Paylaşılabilir dizine yaz: .aider/skills/ .gitignore'daki .aider*
+        # kuralına takıldığı için oraya yazılan beceri depoya giremez.
+        from aider.agent.skills import SHARED_SKILLS_DIR
+
+        skill_dir = Path(self.coder.root) / SHARED_SKILLS_DIR / name
+        skill_md = skill_dir / "SKILL.md"
+        if skill_md.exists():
+            self.io.tool_error(f"{skill_md} zaten var.")
+            return
+
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        skill_md.write_text(
+            f"""---
+name: {name}
+description: NE ZAMAN kullanılacağını yaz — model tetikleme kararını yalnızca bu
+  satıra bakarak verir. Tetikleyici kelimeleri de ekle.
+---
+
+# {name}
+
+Modelin izleyeceği adımları buraya yaz.
+
+## 1. İlk adım
+
+Somut ol. "Dikkatli ol" gibi ifadeler yerine ne yapılacağını söyle.
+
+## 2. İkinci adım
+
+Hangi araçların kullanılacağını belirt: Read, Grep, Bash...
+
+## Raporlama
+
+Sonucun kullanıcıya nasıl sunulacağını tarif et.
+""",
+            encoding="utf-8",
+        )
+
+        self.io.tool_output(f"Beceri oluşturuldu: {skill_md}")
+        self.io.tool_output("Düzenledikten sonra /skills ile yeniden yükle.")
+
+    def cmd_mcp(self, args):
+        """List connected MCP servers and their tools. Use /mcp reload to restart them."""  # noqa
+        coder = self._require_agent()
+        if not coder:
+            return
+
+        if args.strip() == "reload":
+            coder.mcp.shutdown()
+            coder.mcp.load()
+            for err in coder.mcp.errors:
+                self.io.tool_error(f"MCP: {err}")
+            coder.rebuild_registry()
+            self.io.tool_output("MCP sunucuları yeniden başlatıldı.")
+
+        from aider.agent.mcp import find_config
+
+        if not coder.mcp.servers and not coder.mcp.errors:
+            path = find_config(coder.root)
+            if not path:
+                self.io.tool_output(
+                    "MCP yapılandırması yok. Proje köküne .mcp.json oluştur:\n"
+                    '  {"mcpServers": {"ad": {"command": "npx", "args": ["-y", "paket"]}}}'
+                )
+            else:
+                self.io.tool_output(f"{path} içinde tanımlı sunucu yok.")
+            return
+
+        for name, server in coder.mcp.servers.items():
+            tools = [t for t in coder.mcp.tools if t.server is server]
+            durum = "çalışıyor" if server.is_alive() else "DURDU"
+            self.io.tool_output(f"{name} [{durum}] — {len(tools)} araç")
+            for t in tools:
+                yan = "" if t.mutating else "  (salt-okunur)"
+                self.io.tool_output(f"  {t.remote_name}: {t.description}{yan}")
+
+        for err in coder.mcp.errors:
+            self.io.tool_error(f"başlatılamadı — {err}")
+
+    def cmd_permissions(self, args):
+        """Show the agent's permission mode and rules."""  # noqa
+        coder = self._require_agent()
+        if not coder:
+            return
+
+        perms = coder.ctx.permissions
+        self.io.tool_output(f"Mod: {perms.mode}")
+
+        if perms.allow:
+            self.io.tool_output("\nOtomatik izinli:")
+            for rule in perms.allow:
+                self.io.tool_output(f"  {rule.raw}")
+        else:
+            self.io.tool_output("\nOtomatik izinli kural yok.")
+
+        self.io.tool_output("\nReddedilen:")
+        for rule in perms.deny:
+            self.io.tool_output(f"  {rule.raw}")
+
+        self.io.tool_output(
+            "\nKuralları kalıcı yapmak için .aider/permissions.yml dosyasını düzenle."
+        )
 
     def cmd_todo(self, args):
         """Show the agent's current task list."""  # noqa

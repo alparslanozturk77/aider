@@ -1,0 +1,58 @@
+# Agent araç izinleri.
+#
+# Bu dosyayı .aider/permissions.yml olarak kopyala. Depoya girer, yani kural
+# setini takımla paylaşırsın. Kişisel kuralların için ~/.aider/permissions.yml
+# kullan — ikisi birleştirilir.
+#
+# Mod:
+#   ask   varsayılan. Yan etkili her araçta onay sorar.
+#   auto  reddedilmedikçe sormaz. --auto bayrağıyla aynı.
+#   plan  salt-okunur. Write/Edit/Bash modele hiç sunulmaz.
+#
+# Komut satırındaki --permission-mode buradaki modu yener.
+mode: ask
+
+# Sorulmadan çalışacak araç çağrıları.
+#
+# Sözdizimi:
+#   Read                  aracın her çağrısı
+#   Bash(git diff:*)      "git diff" ile başlayan komutlar
+#   Bash(npm test)        tam olarak bu komut
+#   Write(src/**)         src altındaki dosyalara yazma
+#   Edit(*.py)            .py dosyalarını düzenleme
+#
+# Güvenlik notu: zincirlenmiş komutlarda HER parça izinli olmalıdır.
+# "git diff && npm publish" yalnızca ikisi de izinliyse çalışır. Komut ikamesi
+# içeren komutlar ($(...) ya da backtick) hiçbir zaman otomatik onaylanmaz.
+allow:
+  # Okuma ve gezinme zaten sorulmaz, ama okuma amaçlı git komutları yararlı:
+  - Bash(git status:*)
+  - Bash(git diff:*)
+  - Bash(git log:*)
+  - Bash(git show:*)
+  - Bash(git branch:*)
+
+  # Test ve lint çalıştırma
+  - Bash(pytest:*)
+  - Bash(python -m pytest:*)
+  - Bash(npm test:*)
+  - Bash(ruff:*)
+  - Bash(flake8:*)
+
+  # Zararsız keşif
+  - Bash(ls:*)
+  - Bash(cat:*)
+  - Bash(wc:*)
+  - Bash(which:*)
+
+# Hiçbir zaman çalıştırılmayacaklar. Reddetme izni her zaman yener.
+#
+# Aşağıdakilere ek olarak yerleşik bir güvenlik listesi de vardır
+# (rm -rf /, sudo, mkfs, git push, git reset --hard ...). Onları kaldıramazsın;
+# bu liste yalnızca ekleme yapar.
+deny:
+  - Bash(npm publish:*)
+  - Bash(pip upload:*)
+  - Bash(docker push:*)
+  - Bash(terraform apply:*)
+  - Bash(kubectl delete:*)

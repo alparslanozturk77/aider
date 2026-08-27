@@ -1,0 +1,34 @@
+{
+  "_yorum": [
+    "MCP sunucu tanımları. Bu dosyayı .mcp.json olarak kopyala.",
+    "Biçim Claude Code ile aynıdır, mevcut .mcp.json dosyalarını doğrudan kullanabilirsin.",
+    "Sunucu araçları agent'a mcp__<sunucu>__<araç> adıyla görünür.",
+    "Bir sunucu başlatılamazsa oturum düşmez; hata bildirilir ve devam edilir.",
+    "Oturum içinde /mcp ile listeler, /mcp reload ile yeniden başlatırsın.",
+    "Sunucunun readOnlyHint verdiği araçlar onay sorulmadan çalışır; diğerleri sorar."
+  ],
+
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/ben/projects"]
+    },
+
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres"],
+      "env": {
+        "DATABASE_URL": "postgres://kullanici@localhost:5432/veritabani"
+      }
+    },
+
+    "kurum-ici": {
+      "command": "python3",
+      "args": ["/opt/kurum/mcp-sunucu/main.py"],
+      "cwd": "/opt/kurum/mcp-sunucu",
+      "env": {
+        "KURUM_API_TOKEN": "buraya-token"
+      }
+    }
+  }
+}

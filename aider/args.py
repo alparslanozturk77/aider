@@ -195,6 +195,23 @@ def get_parser(default_config_files, git_root):
         help="Max model turns in a single agent tool loop (default: 50)",
     )
     group.add_argument(
+        "--permission-mode",
+        metavar="MODE",
+        choices=["plan", "ask", "auto"],
+        default=None,
+        help=(
+            "Agent tool permissions: plan (read-only), ask (confirm each side effect,"
+            " default), auto (run without asking unless denied)"
+        ),
+    )
+    group.add_argument(
+        "--auto",
+        action="store_const",
+        dest="permission_mode",
+        const="auto",
+        help="Shorthand for --permission-mode auto",
+    )
+    group.add_argument(
         "--auto-accept-architect",
         action=argparse.BooleanOptionalAction,
         default=True,

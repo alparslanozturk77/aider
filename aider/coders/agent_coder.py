@@ -8,6 +8,8 @@ kurar: model araç çağırır, sonucu görür, tekrar karar verir; iş bitene k
 import json
 
 from aider.agent.plan import PLAN_MODE_REMINDER, ExitPlanModeTool
+from aider.agent.mcp import MCPManager
+from aider.agent.permissions import MODE_ASK, MODE_AUTO, MODE_PLAN, load_permissions
 from aider.agent.registry import ToolContext, ToolRegistry
 from aider.agent.skills import SkillLibrary, SkillTool, default_skill_roots
 from aider.agent.todo import TodoList, TodoWriteTool
@@ -38,26 +40,57 @@ class AgentCoder(Coder):
     def __init__(self, *args, **kwargs):
         self.plan_mode = kwargs.pop("plan_mode", False)
         self.max_iterations = kwargs.pop("max_iterations", DEFAULT_MAX_ITERATIONS)
+        permission_mode = kwargs.pop("permission_mode", None) or (
+            MODE_PLAN if self.plan_mode else MODE_ASK
+        )
         super().__init__(*args, **kwargs)
 
-        self.registry = ToolRegistry(
-            [
-                ReadTool(),
-                WriteTool(),
-                EditTool(),
-                BashTool(),
-                GlobTool(),
-                GrepTool(),
-                TodoWriteTool(),
-                SkillTool(),
-                ExitPlanModeTool(),
-            ]
-        )
+        if permission_mode == MODE_PLAN:
+            self.plan_mode = True
+
+        builtin_tools = [
+            ReadTool(),
+            WriteTool(),
+            EditTool(),
+            BashTool(),
+            GlobTool(),
+            GrepTool(),
+            TodoWriteTool(),
+            SkillTool(),
+            ExitPlanModeTool(),
+        ]
+
+        # MCP sunucuları oturum başında başlatılır. Bir sunucunun ayağa
+        # kalkmaması oturumu düşürmez; hata bildirilir ve devam edilir.
+        self.mcp = MCPManager(self.io, self.root)
+        mcp_tools = self.mcp.load()
+        for err in self.mcp.errors:
+            self.io.tool_error(f"MCP: {err}")
+
+        self._builtin_tools = builtin_tools
+        self.registry = ToolRegistry(builtin_tools + mcp_tools)
 
         self.ctx = ToolContext(self)
         self.ctx.todos = TodoList()
         self.ctx.skills = SkillLibrary(default_skill_roots(self.root))
         self.ctx.plan_mode = self.plan_mode
+
+        try:
+            self.ctx.permissions = load_permissions(
+                self.root,
+                mode=MODE_ASK if permission_mode == MODE_PLAN else permission_mode,
+            )
+        except ValueError as err:
+            # Bozuk izin dosyası sessizce daha gevşek bir moda düşmemeli.
+            self.io.tool_error(f"İzin yapılandırması okunamadı: {err}")
+            self.io.tool_warning(
+                "Güvenli varsayılana dönülüyor: her yan etkili araçta onay sorulacak."
+            )
+            self.ctx.permissions = load_permissions(self.root, mode=MODE_ASK)
+
+    def rebuild_registry(self):
+        """MCP sunucuları yeniden başlatıldıktan sonra araç listesini tazele."""
+        self.registry = ToolRegistry(self._builtin_tools + self.mcp.tools)
 
     # ------------------------------------------------------------------
     # Duyuru / prompt
@@ -66,12 +99,22 @@ class AgentCoder(Coder):
     def get_announcements(self):
         lines = super().get_announcements()
         n = len(self.ctx.skills.skills)
-        lines.append(f"Araçlar: {', '.join(self.registry.names())}")
+        builtin = [x for x in self.registry.names() if not x.startswith("mcp__")]
+        lines.append(f"Araçlar: {', '.join(builtin)}")
+        mcp_line = self.mcp.summary()
+        if mcp_line:
+            lines.append(mcp_line)
         lines.append(
             f"Beceriler: {n} yüklendi" + (f" ({', '.join(self.ctx.skills.skills)})" if n else "")
         )
         if self.plan_mode:
             lines.append("Plan modu AÇIK — onay alınana dek dosya değiştirilmez")
+        elif self.ctx.permissions.mode == MODE_AUTO:
+            lines.append("İzin modu: OTOMATİK — reddedilmeyen her araç sorulmadan çalışır")
+        else:
+            n_allow = len(self.ctx.permissions.allow)
+            extra = f", {n_allow} otomatik izin kuralı" if n_allow else ""
+            lines.append(f"İzin modu: onay sorulur{extra}")
         return lines
 
     def fmt_system_prompt(self, prompt):
