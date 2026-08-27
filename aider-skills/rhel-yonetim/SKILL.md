@@ -1,0 +1,112 @@
+---
+name: rhel-yonetim
+description: RHEL sunucularda sistem yönetimi yaparken kullan — servis, log, paket, abonelik, Satellite (hammer), IdM (ipa). "servis", "systemctl", "journalctl", "dnf", "satellite", "hammer", "ipa", "idm", "abonelik", "yama", "repo" isteklerinde tetiklenir.
+---
+
+## Bilmediğin komutu uydurma
+
+Bu ortam çevrimdışı: bir aracın sözdizimini arayamazsın. `hammer`, `ipa` ve
+`subscription-manager` alt komutları sürümden sürüme değişir ve ezberden
+yazılan komut ya hata verir ya da **yanlış şeyi yapar**.
+
+Kural: sözdizimini bilmiyorsan **önce yardım çıktısını oku**.
+
+```bash
+command -v hammer && hammer --version
+hammer --help
+hammer host --help
+hammer host list --help
+```
+
+IdM için:
+
+```bash
+ipa help topics
+ipa help commands | grep -i user
+ipa user-find --help
+```
+
+Yardım çıktısını okumadan `hammer` ya da `ipa` komutu çalıştırma. Araç
+kurulu değilse kullanıcıya söyle, tahmin yürütme.
+
+## Salt-okunur ile yan etkiliyi ayır
+
+Önce durum topla, sonra değiştir. Değiştirmeden önce onay al.
+
+**Güvenli, durum okuyan komutlar** — bunlar RHEL 8/9'da kararlıdır:
+
+```bash
+systemctl status <servis>
+systemctl is-active <servis>
+systemctl is-enabled <servis>
+systemctl list-units --failed
+journalctl -u <servis> -n 100 --no-pager
+journalctl -p err -b --no-pager
+dnf list installed <paket>
+dnf check-update
+rpm -qa | grep <paket>
+subscription-manager status
+subscription-manager list --consumed
+df -h ; free -m ; uptime
+```
+
+**Yan etkili komutlar** — onaysız çalıştırma:
+
+```bash
+systemctl start|stop|restart|enable|disable
+dnf install|remove|update
+subscription-manager register|attach|unregister
+hammer ... create|update|delete|remove
+ipa ... -add|-mod|-del
+```
+
+`ipa` komutlarında son ek fiili belirtir: `user-find` okur, `user-add` yazar,
+`user-del` siler. `-find`, `-show`, `-status` okur; `-add`, `-mod`, `-del`
+değiştirir.
+
+## journalctl okurken
+
+- `-n 100` olmadan çalıştırma; log devasa olabilir ve bağlamı doldurur
+- `--no-pager` şart, yoksa komut takılır
+- `-p err` yalnızca hata seviyesi ve üstünü verir — önce bununla bak
+- `--since "1 hour ago"` ile daralt
+- Servisin kendi log dosyası varsa (`/var/log/...`) onu da kontrol et
+
+## Zarar verebilecek komutlar
+
+Bunları **asla** onay almadan çalıştırma; izin sistemi çoğunu zaten reddediyor:
+
+- `subscription-manager unregister` — sunucunun aboneliğini düşürür, yamalar durur
+- `hammer host delete` — Satellite'ten sunucu kaydını siler
+- `ipa host-del`, `ipa user-del` — kimlik kaydını siler, geri dönüşü zordur
+- `dnf remove` — bağımlılıklarla birlikte beklenmedik paketleri kaldırabilir
+- `systemctl stop` — üretim servisini durdurur
+- `firewall-cmd --remove-*` — uzaktan erişimini kesebilirsin
+
+Özellikle IdM'de: bir sunucuyu domainden çıkarmak (`ipa-client-install
+--uninstall`) o sunucudaki tüm kimlik doğrulamayı bozar. Kendi bağlandığın
+sunucuda çalıştırırsan oturumunu kaybedersin.
+
+## Birden çok sunucu
+
+Tek sunucudan fazlasına dokunacaksan `filo-durum-kontrolu` becerisine geç.
+SSH döngüsü kurma, ad-hoc `ansible all -m shell` kullanma.
+
+## Raporlama
+
+Komutun **çıktısını** göster, özetleyip geçme — sistem yönetiminde ayrıntı
+önemlidir. Ama uzun çıktıyı olduğu gibi yapıştırma; ilgili satırları seç ve
+neden ilgili olduklarını söyle.
+
+Bir şeyi doğrulamadıysan "çalışıyor" deme. Servisin ayakta olduğunu iddia
+etmenin ölçüsü `systemctl is-active` çıktısını görmüş olmaktır.
+
+## Bu becerinin sınırı
+
+Burada `hammer` ve `ipa` için **komut referansı yok** — bilinçli olarak.
+Sürüme bağlı oldukları için ezberden yazılmış bir referans yanlış bilgi
+kaynağı olur.
+
+Kendi ortamına özgü referansı oluşturmak için `beceri-yaz` becerisini kullan:
+gerçek sunucuda `--help` çıktısından üretir, çalıştırarak doğrular ve sürüm
+notu düşer.

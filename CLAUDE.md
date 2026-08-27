@@ -149,8 +149,12 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 | `hata-ayikla` | Hata ve çöken test araştırması |
 | `test-yaz` | Test yazma |
 | `beceri-yaz` | Yeni beceri yazma |
-| `mcp-ekle` | MCP sunucusu ekleme ve teşhis |
+| `mcp-ekle` | MCP sunucusu ekleme, teşhis, çevrimdışı kurulum |
 | `upstream-birlestir` | Upstream'den güncelleme |
+| `rhel-yonetim` | RHEL sistem yönetimi, Satellite, IdM |
+
+`ornek/altyapi/` altında filo geneli operasyonlar için ayrı bir şablon var
+(beceri + izin kuralları). Aider fork'unun parçası değil, kopyalanacak örnek.
 
 Yeni beceri: `/skills new <ad>` — iskeleti `aider-skills/` altına yazar.
 

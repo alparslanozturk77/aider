@@ -65,6 +65,63 @@ allow:
   - mcp__postgres__query
 ```
 
+## Çevrimdışı kurumda MCP
+
+Kurum sunucusu internete çıkamıyorsa yaygın örneklerin çoğu **çalışmaz**:
+
+```json
+{"command": "npx", "args": ["-y", "@modelcontextprotocol/server-postgres"]}
+```
+
+`npx -y` paketi çalışma anında npm'den indirir. İnternet yoksa sunucu hiç
+başlamaz.
+
+Çevrimdışı için üç seçenek, tercih sırasıyla:
+
+**1. Python ile kendi sunucunu yaz (en sağlam).**
+
+Yalnızca standart kütüphane kullanırsan hiçbir bağımlılık indirmen gerekmez.
+Protokol küçüktür — üç metot yeter. Sunucuyu depoya koy, `.mcp.json` içinde
+mutlak yolla çağır:
+
+```json
+{
+  "mcpServers": {
+    "satellite": {
+      "command": "/usr/bin/python3",
+      "args": ["/opt/kurum/mcp/satellite_server.py"],
+      "env": {"SATELLITE_URL": "https://satellite.kurum.local"}
+    }
+  }
+}
+```
+
+RHEL'de `/usr/bin/python3` her zaman vardır (3.6/3.9); sunucun yalnızca
+standart kütüphane kullanıyorsa bu sürümler yeterli — aider'ın Python 3.10+
+gereksinimi MCP sunucusunu bağlamaz, çünkü ayrı bir süreçtir.
+
+**2. Node paketini önceden indirip taşı.**
+
+İnternete çıkabilen bir makinede `npm pack` ya da `npm install --prefix`, sonra
+dizini kuruma taşı ve `node /opt/kurum/mcp/.../index.js` diye çağır. `npx`
+kullanma.
+
+**3. Bağımlılıkları vendor'la.**
+
+Python sunucusu bir kütüphaneye ihtiyaç duyuyorsa wheel'lerini önceden indir:
+
+```bash
+pip download -d wheels <paket> --platform manylinux_2_28_x86_64 \
+    --python-version 3.12 --only-binary=:all:
+```
+
+### Kimlik bilgisi
+
+Çevrimdışı kurumda MCP'nin asıl kazancı budur: Satellite ya da IdM parolasını
+sunucunun kendi ortamında tut, agent'ın kabuğu onu hiç görmesin. `.mcp.json`
+`.gitignore`'dadır ama yine de parolayı oraya yazmak yerine sunucunun bir
+dosyadan ya da `systemd` ortamından okumasını tercih et.
+
 ## Yeni sunucu yazarken
 
 Protokol: stdio üzerinden satır bazlı JSON-RPC 2.0. Gerekli üç metot:
