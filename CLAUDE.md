@@ -155,11 +155,37 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 | `k8s-rancher` | Kubernetes/Rancher teşhisi, docker |
 | `servis-teshis` | PostgreSQL, Redis, RabbitMQ, Nginx, Apache |
 | `rapor-uret` | CSV / Excel / PDF / HTML rapor üretimi |
+| `git-azuredevops` | Git, PR, pipeline, merge çakışması |
+| `belge-yaz` | README, runbook, mimari notu |
 
 `ornek/altyapi/` altında filo geneli operasyonlar için ayrı bir şablon var
 (beceri + izin kuralları). Aider fork'unun parçası değil, kopyalanacak örnek.
 
 Yeni beceri: `/skills new <ad>` — iskeleti `aider-skills/` altına yazar.
+
+## Bellek ve proje talimatları
+
+Upstream aider'da ikisi de yoktu; agent katmanı ekledi.
+
+**Proje talimatları** — depo kökündeki `AGENTS.md`, `KURALLAR.md`, `CLAUDE.md`
+ya da `CONVENTIONS.md` her oturumda sistem promptuna eklenir. Genel yönergeleri
+ezer.
+
+**Bellek** — `aider/agent/memory.py`. Kısa notlar, her biri tek dosya. Üç
+dizinden okunur (beceri sistemiyle aynı desen):
+
+| Dizin | Kapsam | Depoya girer |
+|---|---|---|
+| `.aider/memory/` | proje, kişisel | hayır |
+| `aider-memory/` | proje, paylaşılan | evet |
+| `~/.aider/memory/` | tüm projeler, kişisel | hayır |
+
+Komutlar: `/hatirla <başlık> :: <not>`, `/bellek`, `/unut <başlık>`.
+Model de `Hatirla` aracıyla kendisi not alabilir; yan etkili sayıldığı için
+onay ister ve plan modunda sunulmaz.
+
+Notların tamamı sistem promptuna girer (12k karakter bütçesiyle). Bütçe
+aşılırsa en yeniler tutulur ve duyuruda kaç notun düştüğü yazar.
 
 ## Yazma disiplini
 

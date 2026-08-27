@@ -58,6 +58,27 @@ yükle ve talimatlarını izle.
 {skills}
 """
 
+    instructions_prompt = """
+# Proje talimatları
+
+Aşağıdakiler bu depo için yazılmış kurallardır. Yukarıdaki genel yönergelerle
+çelişirlerse **bunlar geçerlidir**.
+
+{instructions}
+"""
+
+    memory_prompt = """
+# Bellek
+
+Önceki oturumlardan kalan notlar. Kullanıcının tercihleri ve projeye dair
+kalıcı gerçekler.
+
+{memory}
+
+Bir not artık doğru değilse kullanıcıya söyle. Kullanıcı kalıcı bir tercih ya
+da hedef belirttiğinde Hatirla aracıyla kaydet.
+"""
+
     files_content_prefix = """Şu dosyalar sohbet bağlamına eklendi:
 """
 

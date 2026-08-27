@@ -9,6 +9,12 @@ import json
 
 from aider.agent.plan import PLAN_MODE_REMINDER, ExitPlanModeTool
 from aider.agent.mcp import MCPManager
+from aider.agent.memory import (
+    HatirlaTool,
+    MemoryStore,
+    default_memory_roots,
+    load_instructions,
+)
 from aider.agent.permissions import MODE_ASK, MODE_AUTO, MODE_PLAN, load_permissions
 from aider.agent.registry import ToolContext, ToolRegistry
 from aider.agent.skills import SkillLibrary, SkillTool, default_skill_roots
@@ -57,6 +63,7 @@ class AgentCoder(Coder):
             GrepTool(),
             TodoWriteTool(),
             SkillTool(),
+            HatirlaTool(),
             ExitPlanModeTool(),
         ]
 
@@ -73,7 +80,10 @@ class AgentCoder(Coder):
         self.ctx = ToolContext(self)
         self.ctx.todos = TodoList()
         self.ctx.skills = SkillLibrary(default_skill_roots(self.root))
+        self.ctx.memory = MemoryStore(default_memory_roots(self.root))
         self.ctx.plan_mode = self.plan_mode
+
+        self.instructions, self.instruction_files = load_instructions(self.root)
 
         try:
             self.ctx.permissions = load_permissions(
@@ -107,6 +117,15 @@ class AgentCoder(Coder):
         lines.append(
             f"Beceriler: {n} yüklendi" + (f" ({', '.join(self.ctx.skills.skills)})" if n else "")
         )
+        if self.instruction_files:
+            adlar = ", ".join(p.name for p in self.instruction_files)
+            lines.append(f"Proje talimatları: {adlar}")
+        if self.ctx.memory.notes:
+            dusen = self.ctx.memory.dropped()
+            satir = f"Bellek: {len(self.ctx.memory.notes)} not"
+            if dusen:
+                satir += f" ({dusen} tanesi bütçe nedeniyle yüklenmedi)"
+            lines.append(satir)
         if self.plan_mode:
             lines.append("Plan modu AÇIK — onay alınana dek dosya değiştirilmez")
         elif self.ctx.permissions.mode == MODE_AUTO:
@@ -123,6 +142,15 @@ class AgentCoder(Coder):
         catalog = self.ctx.skills.catalog()
         if catalog:
             out += self.gpt_prompts.skills_prompt.format(skills=catalog)
+
+        # Proje talimatları ve bellek, becerilerden SONRA eklenir: ikisi de
+        # kullanıcının kendi yazdığı kurallardır ve genel yönergeleri ezmelidir.
+        if self.instructions:
+            out += self.gpt_prompts.instructions_prompt.format(instructions=self.instructions)
+
+        notes = self.ctx.memory.render()
+        if notes:
+            out += self.gpt_prompts.memory_prompt.format(memory=notes)
 
         if self.ctx.plan_mode:
             out += "\n" + PLAN_MODE_REMINDER

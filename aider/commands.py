@@ -1332,6 +1332,99 @@ Sonucun kullanıcıya nasıl sunulacağını tarif et.
         for err in coder.mcp.errors:
             self.io.tool_error(f"başlatılamadı — {err}")
 
+    def cmd_hatirla(self, args):
+        """Save a persistent note: /hatirla [tur] <başlık> :: <not>"""  # noqa
+        from aider.agent.memory import TYPES
+
+        coder = self._require_agent()
+        if not coder:
+            return
+
+        metin = args.strip()
+        if not metin:
+            self.io.tool_output(
+                "Kullanım: /hatirla <başlık> :: <not>\n"
+                f"Tür belirtmek için başa yaz: /hatirla tercih <başlık> :: <not>\n"
+                f"Türler: {', '.join(TYPES)}"
+            )
+            return
+
+        tur = "proje"
+        ilk = metin.split(None, 1)
+        if ilk and ilk[0] in TYPES:
+            tur = ilk[0]
+            metin = ilk[1] if len(ilk) > 1 else ""
+
+        if "::" in metin:
+            baslik, govde = (x.strip() for x in metin.split("::", 1))
+        else:
+            # Ayraç verilmediyse ilk satır başlık, gerisi gövde olsun.
+            satirlar = metin.splitlines()
+            baslik = satirlar[0].strip()
+            govde = "\n".join(satirlar[1:]).strip() or baslik
+
+        try:
+            path = coder.ctx.memory.write(baslik, govde, tur)
+        except Exception as err:
+            self.io.tool_error(f"Not kaydedilemedi: {err}")
+            return
+
+        self.io.tool_output(f"Kaydedildi: {path}")
+        self.io.tool_output("Sonraki oturumlarda otomatik yüklenecek.")
+
+    def cmd_bellek(self, args):
+        """List persistent notes, or reload them from disk."""  # noqa
+        coder = self._require_agent()
+        if not coder:
+            return
+
+        coder.ctx.memory.load()
+        notes = coder.ctx.memory.notes
+        if not notes:
+            roots = "\n".join(f"  {r}" for r in coder.ctx.memory.roots)
+            self.io.tool_output(
+                f"Kayıtlı not yok. Aranan dizinler:\n{roots}\n\n"
+                "Not eklemek için: /hatirla <başlık> :: <not>"
+            )
+            return
+
+        self.io.tool_output(f"{len(notes)} not:")
+        for note in sorted(notes.values(), key=lambda n: (n.tur, n.name)):
+            tarih = f"  {note.tarih}" if note.tarih else ""
+            self.io.tool_output(f"  [{note.tur}] {note.name}{tarih}")
+            self.io.tool_output(f"      {note.body.strip().splitlines()[0][:90]}")
+
+        dusen = coder.ctx.memory.dropped()
+        if dusen:
+            self.io.tool_warning(
+                f"{dusen} not bütçe sınırı nedeniyle sistem promptuna girmiyor. "
+                "Eski notları /unut ile temizle."
+            )
+
+    def cmd_unut(self, args):
+        """Delete a persistent note by name: /unut <başlık>"""  # noqa
+        coder = self._require_agent()
+        if not coder:
+            return
+
+        name = args.strip()
+        if not name:
+            self.io.tool_error("Kullanım: /unut <başlık>   (adları /bellek ile gör)")
+            return
+
+        note = coder.ctx.memory.notes.get(name)
+        if not note:
+            self.io.tool_error(f"'{name}' diye bir not yok. /bellek ile listele.")
+            return
+
+        self.io.tool_output(f"[{note.tur}] {note.name}")
+        self.io.tool_output(f"  {note.body.strip()[:200]}")
+        if not self.io.confirm_ask("Bu not silinsin mi?"):
+            return
+
+        path = coder.ctx.memory.delete(name)
+        self.io.tool_output(f"Silindi: {path}")
+
     def cmd_model_ekle(self, args):
         """Set up a model interactively and write it to your home config."""  # noqa
         from aider.agent.model_setup import ModelSetupCancelled, run_setup

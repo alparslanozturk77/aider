@@ -1292,3 +1292,218 @@ class TestInfraTemplateSkill(unittest.TestCase):
         skill = lib.get("filo-durum-kontrolu")
         self.assertEqual(skill.name, skill.path.parent.name)
         self.assertGreater(len(skill.body), 1000)
+
+
+# ---------------------------------------------------------------------------
+# Bellek ve proje talimatları
+# ---------------------------------------------------------------------------
+
+from aider.agent.memory import (  # noqa: E402
+    INSTRUCTION_FILES,
+    MemoryStore,
+    _slug,
+    default_memory_roots,
+    load_instructions,
+)
+
+
+class TestSlug(unittest.TestCase):
+    def test_turkish_characters_become_ascii(self):
+        self.assertEqual(_slug("Üretim Kümesi Ayarı"), "uretim-kumesi-ayari")
+
+    def test_punctuation_is_stripped(self):
+        self.assertEqual(_slug("Rapor: CSV / ayraç!"), "rapor-csv-ayrac")
+
+    def test_empty_falls_back(self):
+        self.assertEqual(_slug("!!!"), "not")
+
+    def test_length_is_capped(self):
+        self.assertLessEqual(len(_slug("x" * 200)), 48)
+
+
+class TestProjectInstructions(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_no_file_yields_empty(self):
+        text, found = load_instructions(self.root)
+        self.assertEqual(text, "")
+        self.assertEqual(found, [])
+
+    def test_agents_md_is_loaded(self):
+        (self.root / "AGENTS.md").write_text("Tüm yorumlar Türkçe.", encoding="utf-8")
+        text, found = load_instructions(self.root)
+        self.assertIn("Tüm yorumlar Türkçe.", text)
+        self.assertEqual([p.name for p in found], ["AGENTS.md"])
+
+    def test_multiple_files_are_all_included(self):
+        (self.root / "AGENTS.md").write_text("kural bir", encoding="utf-8")
+        (self.root / "CONVENTIONS.md").write_text("kural iki", encoding="utf-8")
+        text, found = load_instructions(self.root)
+        self.assertIn("kural bir", text)
+        self.assertIn("kural iki", text)
+        self.assertEqual(len(found), 2)
+
+    def test_empty_file_is_skipped(self):
+        (self.root / "AGENTS.md").write_text("   \n", encoding="utf-8")
+        text, found = load_instructions(self.root)
+        self.assertEqual(found, [])
+
+    def test_known_names_include_claude_md(self):
+        self.assertIn("CLAUDE.md", INSTRUCTION_FILES)
+
+
+class TestMemoryStore(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name) / "mem"
+        self.store = MemoryStore([self.root])
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_write_then_read_back(self):
+        self.store.write("Üretim kümesi", "prod-01, cuma değişiklik yok", "ortam")
+        fresh = MemoryStore([self.root])
+        self.assertIn("Üretim kümesi", fresh.notes)
+        self.assertEqual(fresh.notes["Üretim kümesi"].tur, "ortam")
+        self.assertIn("prod-01", fresh.notes["Üretim kümesi"].body)
+
+    def test_note_survives_a_new_store(self):
+        # Asıl amaç: oturumlar arası kalıcılık.
+        self.store.write("Rapor tercihi", "CSV, ayraç noktalı virgül", "tercih")
+        self.assertIn("CSV", MemoryStore([self.root]).render())
+
+    def test_rewriting_same_title_overwrites(self):
+        self.store.write("Hedef", "eski", "proje")
+        self.store.write("Hedef", "yeni", "proje")
+        self.assertEqual(len(self.store.notes), 1)
+        self.assertIn("yeni", self.store.notes["Hedef"].body)
+
+    def test_delete_removes_note_and_file(self):
+        path = self.store.write("Gecici", "silinecek", "proje")
+        self.store.delete("Gecici")
+        self.assertNotIn("Gecici", self.store.notes)
+        self.assertFalse(path.exists())
+
+    def test_delete_unknown_returns_none(self):
+        self.assertIsNone(self.store.delete("yok"))
+
+    def test_invalid_type_rejected(self):
+        with self.assertRaises(ToolError):
+            self.store.write("x", "y", "saçma-tür")
+
+    def test_empty_body_rejected(self):
+        with self.assertRaises(ToolError):
+            self.store.write("x", "   ", "proje")
+
+    def test_empty_title_rejected(self):
+        with self.assertRaises(ToolError):
+            self.store.write("  ", "gövde", "proje")
+
+    def test_render_includes_type_and_body(self):
+        self.store.write("Hedef", "gövde metni", "proje")
+        out = self.store.render()
+        self.assertIn("[proje]", out)
+        self.assertIn("gövde metni", out)
+
+    def test_empty_store_renders_empty(self):
+        self.assertEqual(self.store.render(), "")
+
+    def test_budget_drops_oldest_and_reports_count(self):
+        import aider.agent.memory as mem
+
+        long_body = "x" * 3000
+        for i in range(10):
+            self.store.write(f"Not {i}", long_body, "proje")
+
+        with patch.object(mem, "MEMORY_BUDGET", 6000):
+            rendered = self.store.render()
+            self.assertLessEqual(len(rendered), 6000)
+            self.assertGreater(self.store.dropped(), 0)
+
+    def test_first_root_wins_on_name_collision(self):
+        kisisel = Path(self.tmp.name) / "kisisel"
+        paylasilan = Path(self.tmp.name) / "paylasilan"
+        MemoryStore([kisisel]).write("Hedef", "kişisel sürüm", "proje")
+        MemoryStore([paylasilan]).write("Hedef", "paylaşılan sürüm", "proje")
+
+        store = MemoryStore([kisisel, paylasilan])
+        self.assertIn("kişisel sürüm", store.notes["Hedef"].body)
+
+    def test_default_roots_include_shared_dir(self):
+        from aider.agent.memory import SHARED_MEMORY_DIR
+
+        roots = [str(r) for r in default_memory_roots("/proje")]
+        self.assertTrue(any(r.endswith(SHARED_MEMORY_DIR) for r in roots))
+
+
+class TestMemoryInAgentCoder(unittest.TestCase):
+    """Notların ve talimatların gerçekten sistem promptuna girdiğini doğrula."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.prev = os.getcwd()
+        os.chdir(self.root)
+
+    def tearDown(self):
+        os.chdir(self.prev)
+        self.tmp.cleanup()
+
+    def _coder(self):
+        from aider.coders import Coder
+        from aider.io import InputOutput
+        from aider.models import Model
+
+        return Coder.create(
+            main_model=Model("gpt-4o"),
+            edit_format="agent",
+            io=InputOutput(yes=True, pretty=False, fancy_input=False),
+            fnames=[],
+            use_git=False,
+            stream=False,
+        )
+
+    def test_instructions_reach_the_system_prompt(self):
+        (self.root / "AGENTS.md").write_text("Yorumlar Türkçe yazılır.", encoding="utf-8")
+        coder = self._coder()
+        prompt = coder.fmt_system_prompt(coder.gpt_prompts.main_system)
+        self.assertIn("Yorumlar Türkçe yazılır.", prompt)
+
+    def test_memory_reaches_the_system_prompt(self):
+        coder = self._coder()
+        coder.ctx.memory.write("Rapor tercihi", "Her zaman CSV", "tercih")
+        coder.ctx.memory.load()
+        prompt = coder.fmt_system_prompt(coder.gpt_prompts.main_system)
+        self.assertIn("Her zaman CSV", prompt)
+
+    def test_hatirla_tool_is_offered(self):
+        self.assertIn("Hatirla", self._coder().registry.names())
+
+    def test_hatirla_is_hidden_in_plan_mode(self):
+        # Not yazmak yan etkilidir; plan modunda sunulmamalı.
+        from aider.coders import Coder
+        from aider.io import InputOutput
+        from aider.models import Model
+
+        coder = Coder.create(
+            main_model=Model("gpt-4o"),
+            edit_format="agent",
+            io=InputOutput(yes=True, pretty=False, fancy_input=False),
+            fnames=[],
+            use_git=False,
+            stream=False,
+            plan_mode=True,
+        )
+        self.assertNotIn("Hatirla", coder.available_tools())
+
+    def test_no_memory_no_instructions_is_fine(self):
+        coder = self._coder()
+        prompt = coder.fmt_system_prompt(coder.gpt_prompts.main_system)
+        self.assertNotIn("# Bellek", prompt)
+        self.assertNotIn("# Proje talimatları", prompt)
