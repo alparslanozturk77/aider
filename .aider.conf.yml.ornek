@@ -1,0 +1,57 @@
+# Kurum içi OpenAI uyumlu Qwen endpoint'i için örnek aider yapılandırması.
+#
+# Kullanmak için bu dosyayı projenin köküne .aider.conf.yml olarak kopyala
+# (ya da ~/.aider.conf.yml'ye koyup her projede geçerli kıl):
+#
+#   cp .aider.conf.yml.ornek .aider.conf.yml
+#
+# API anahtarını buraya YAZMA. .env dosyasına koy (bkz. .env.ornek).
+
+##########################################################################
+# Model
+##########################################################################
+
+# OpenAI uyumlu bir endpoint kullanıldığında model adı "openai/" ile başlar.
+# Buradaki kısım, endpoint'in /v1/models çıktısında dönen model kimliğidir.
+# Doğrulamak için:
+#   curl -s $OPENAI_API_BASE/models -H "Authorization: Bearer $OPENAI_API_KEY" | jq '.data[].id'
+model: openai/qwen3-coder
+
+# Commit mesajı ve sohbet özeti gibi ucuz işler için ayrı, küçük bir model
+# tanımlayabilirsin. Kurumda tek model varsa bu satırı ana modelle aynı bırak.
+weak-model: openai/qwen3-coder
+
+##########################################################################
+# Agent modu (Claude Code benzeri araç döngüsü)
+##########################################################################
+
+# Varsayılan sohbet modunu agentic araç döngüsü yap.
+edit-format: agent
+
+# Tek bir kullanıcı mesajı için izin verilen azami model turu.
+# Modelin araç döngüsünde takılıp kalmasına karşı emniyet sübabı.
+max-tool-iterations: 50
+
+# Oturumu plan modunda başlat: model önce araştırıp plan sunar, sen onaylamadan
+# hiçbir dosyaya dokunmaz. Oturum içinde /plan ile açıp kapatabilirsin.
+plan: false
+
+##########################################################################
+# Güvenlik
+##########################################################################
+
+# Dosya yazma, düzenleme ve kabuk komutları için onay iste.
+# true yapmak modelin sormadan komut çalıştırmasına izin verir — dikkatli ol.
+yes-always: false
+
+# Aider'ın senin adına commit atmasını istemiyorsan true yap.
+auto-commits: true
+
+##########################################################################
+# Diğer
+##########################################################################
+
+# Kurum modeli aider'ın model veritabanında olmadığı için uyarı basar; kapat.
+show-model-warnings: false
+
+stream: true

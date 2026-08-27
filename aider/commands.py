@@ -1191,6 +1191,50 @@ class Commands:
         """Enter architect/editor mode using 2 different models. If no prompt provided, switches to architect/editor mode."""  # noqa
         return self._generic_chat_command(args, "architect")
 
+    def cmd_agent(self, args):
+        """Enter agentic tool-calling mode. If no prompt provided, switches to agent mode."""  # noqa
+        return self._generic_chat_command(args, "agent")
+
+    def cmd_plan(self, args):
+        """Toggle plan mode: research and propose a plan before making any edits."""  # noqa
+        coder = self.coder
+        if getattr(coder, "edit_format", None) != "agent":
+            # Plan modu araç döngüsüne bağlı; önce agent moduna geç.
+            return self._generic_chat_command(args, "agent")
+
+        coder.ctx.plan_mode = not coder.ctx.plan_mode
+        coder.plan_mode = coder.ctx.plan_mode
+        if coder.ctx.plan_mode:
+            self.io.tool_output("Plan modu AÇIK — onay alınana dek dosya değiştirilmeyecek.")
+        else:
+            self.io.tool_output("Plan modu KAPALI — düzenlemeler doğrudan uygulanacak.")
+
+    def cmd_skills(self, args):
+        """List the skills available to the agent, or reload them from disk."""  # noqa
+        coder = self.coder
+        if getattr(coder, "edit_format", None) != "agent":
+            self.io.tool_error("Beceriler yalnızca agent modunda kullanılır (/agent).")
+            return
+
+        coder.ctx.skills.load()
+        skills = coder.ctx.skills.skills
+        if not skills:
+            roots = "\n".join(f"  {r}" for r in coder.ctx.skills.roots)
+            self.io.tool_output(f"Tanımlı beceri yok. Aranan dizinler:\n{roots}")
+            return
+
+        self.io.tool_output(f"{len(skills)} beceri:")
+        for skill in skills.values():
+            self.io.tool_output(f"  {skill.name}: {skill.description}")
+
+    def cmd_todo(self, args):
+        """Show the agent's current task list."""  # noqa
+        coder = self.coder
+        if getattr(coder, "edit_format", None) != "agent":
+            self.io.tool_error("Görev listesi yalnızca agent modunda kullanılır (/agent).")
+            return
+        self.io.tool_output(coder.ctx.todos.render())
+
     def cmd_context(self, args):
         """Enter context mode to see surrounding code context. If no prompt provided, switches to context mode."""  # noqa
         return self._generic_chat_command(args, "context", placeholder=args.strip() or None)

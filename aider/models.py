@@ -1004,9 +1004,24 @@ class Model(ModelSettings):
             kwargs["temperature"] = temperature
 
         if functions is not None:
-            function = functions[0]
-            kwargs["tools"] = [dict(type="function", function=function)]
-            kwargs["tool_choice"] = {"type": "function", "function": {"name": function["name"]}}
+            # İki biçim destekleniyor:
+            #  1) Eski aider biçimi: çıplak function şemaları listesi. Model tek bir
+            #     belirli fonksiyonu çağırmaya zorlanır (wholefile_func vb. için).
+            #  2) Agentic biçim: önceden {"type": "function", ...} sarmalanmış araçlar.
+            #     Model araçlar arasından kendisi seçer ya da düz metinle yanıtlar.
+            already_wrapped = all(
+                isinstance(f, dict) and f.get("type") == "function" for f in functions
+            )
+            if already_wrapped:
+                kwargs["tools"] = list(functions)
+                kwargs["tool_choice"] = "auto"
+            else:
+                function = functions[0]
+                kwargs["tools"] = [dict(type="function", function=function)]
+                kwargs["tool_choice"] = {
+                    "type": "function",
+                    "function": {"name": function["name"]},
+                }
         if self.extra_params:
             kwargs.update(self.extra_params)
         if self.is_ollama() and "num_ctx" not in kwargs:

@@ -1,0 +1,19 @@
+{
+  "_yorum": [
+    "Kurum modeli aider'ın model veritabanında bulunmadığı için bağlam penceresi",
+    "ve maliyet bilgisini burada kendin tanımlarsın. Bu dosyayı",
+    ".aider.model.metadata.json olarak kopyala ve değerleri kendi modeline göre",
+    "düzelt. Anahtar, .aider.conf.yml'deki model adıyla birebir aynı olmalı.",
+    "Kurum içi endpoint'te ücretlendirme yoksa maliyetleri 0 bırak."
+  ],
+
+  "openai/qwen3-coder": {
+    "max_input_tokens": 262144,
+    "max_output_tokens": 65536,
+    "input_cost_per_token": 0,
+    "output_cost_per_token": 0,
+    "litellm_provider": "openai",
+    "mode": "chat",
+    "supports_function_calling": true
+  }
+}

@@ -176,6 +176,25 @@ def get_parser(default_config_files, git_root):
         help="Use architect edit format for the main chat",
     )
     group.add_argument(
+        "--agent",
+        action="store_const",
+        dest="edit_format",
+        const="agent",
+        help="Use the agentic tool-calling mode (Claude Code style) for the main chat",
+    )
+    group.add_argument(
+        "--plan",
+        action="store_true",
+        default=False,
+        help="Start agent mode in plan mode: research and propose a plan before editing",
+    )
+    group.add_argument(
+        "--max-tool-iterations",
+        type=int,
+        default=50,
+        help="Max model turns in a single agent tool loop (default: 50)",
+    )
+    group.add_argument(
         "--auto-accept-architect",
         action=argparse.BooleanOptionalAction,
         default=True,

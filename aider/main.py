@@ -969,6 +969,15 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
     # Track auto-commits configuration
     analytics.event("auto_commits", enabled=bool(args.auto_commits))
 
+    # Agent moduna özgü ayarlar yalnızca o coder'a geçirilir; diğer coder'lar bu
+    # anahtar kelimeleri kabul etmez.
+    agent_kwargs = {}
+    if args.edit_format == "agent":
+        agent_kwargs = dict(
+            plan_mode=args.plan,
+            max_iterations=args.max_tool_iterations,
+        )
+
     try:
         coder = Coder.create(
             main_model=main_model,
@@ -1004,6 +1013,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             auto_copy_context=args.copy_paste,
             auto_accept_architect=args.auto_accept_architect,
             add_gitignore_files=args.add_gitignore_files,
+            **agent_kwargs,
         )
     except UnknownEditFormat as err:
         io.tool_error(str(err))

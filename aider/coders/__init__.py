@@ -1,3 +1,4 @@
+from .agent_coder import AgentCoder
 from .architect_coder import ArchitectCoder
 from .ask_coder import AskCoder
 from .base_coder import Coder
@@ -16,6 +17,7 @@ from .wholefile_coder import WholeFileCoder
 # from .single_wholefile_func_coder import SingleWholeFileFunctionCoder
 
 __all__ = [
+    AgentCoder,
     HelpCoder,
     AskCoder,
     Coder,

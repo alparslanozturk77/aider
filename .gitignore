@@ -3,6 +3,20 @@
 aider.code-workspace
 *.pyc
 .aider*
+
+# Agent katmanı: gerçek yapılandırma ve sohbet geçmişi yukarıdaki .aider* ile
+# ignore edilir, ama depoya girmesi gereken şablonlar ve paylaşılan beceriler
+# geri alınır.
+!.aider/
+!.aider/skills/
+!.aider/skills/**
+!.aider.conf.yml.ornek
+!.aider.model.metadata.json.ornek
+!.aider.model.settings.yml.ornek
+
+# API anahtarları asla depoya girmemeli. Şablonu .env.ornek'te tutuyoruz.
+.env
+!.env.ornek
 aider_chat.egg-info/
 build
 dist/
