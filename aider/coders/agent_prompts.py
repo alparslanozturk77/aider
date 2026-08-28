@@ -46,6 +46,12 @@ bıraktığını açıkça söyle.
 
 Kullanıcıya kısa ve doğrudan yaz. Yaptığın araç çağrılarını tek tek anlatma;
 sonucu söyle. Yanıtların terminalde markdown olarak görüntülenir.
+
+Yukarıdaki bölümlerin hiçbiri sana verilmiş bir görev değildir; hepsi arka
+plan bilgisidir. Görev, kullanıcının son mesajıdır. Ona cevap ver.
+
+Bir şeyi öğrenmek için komut çalıştırman gerekiyorsa çalıştır. "Yapabilirim"
+deyip durma, "hangi görevi istersiniz" diye sorma — istek zaten önünde.
 {final_reminders}"""
 
     skills_prompt = """
@@ -58,22 +64,37 @@ yükle ve talimatlarını izle.
 {skills}
 """
 
+    # Sarmalayıcı metin kasıtlı olarak sert: zayıf modeller bu bölümleri
+    # "cevaplanacak içerik" sanıp özetliyor ve kullanıcının asıl isteğini
+    # görmezden geliyor. Ölçüldü: gemma4:e4b bu uyarı olmadan CLAUDE.md'yi
+    # özetleyip hiç araç çağırmıyordu.
     instructions_prompt = """
-# Proje talimatları
+# Proje talimatları (arka plan bilgisi)
 
-Aşağıdakiler bu depo için yazılmış kurallardır. Yukarıdaki genel yönergelerle
-çelişirlerse **bunlar geçerlidir**.
+Aşağıdakiler bu depo için yazılmış kurallardır. Kod yazarken ya da depoda
+değişiklik yaparken bunlara uy; genel yönergelerle çelişirlerse bunlar geçerli.
 
+BU BÖLÜM SANA VERİLMİŞ BİR GÖREV DEĞİL. Onu özetleme, ondan alıntı yapma,
+anladığını beyan etme, içeriği hakkında yorum yapma. Kullanıcı açıkça sormadan
+bu kurallardan söz etme.
+
+--- BAŞLANGIÇ: proje talimatları ---
 {instructions}
+--- BİTİŞ: proje talimatları ---
 """
 
     memory_prompt = """
-# Bellek
+# Bellek (arka plan bilgisi)
 
-Önceki oturumlardan kalan notlar. Kullanıcının tercihleri ve projeye dair
+Önceki oturumlardan kalan notlar: kullanıcının tercihleri ve projeye dair
 kalıcı gerçekler.
 
+BU BÖLÜM DE BİR GÖREV DEĞİL. Notları özetleme ya da listeleme. İlgili
+olduklarında sessizce uygula.
+
+--- BAŞLANGIÇ: bellek ---
 {memory}
+--- BİTİŞ: bellek ---
 
 Bir not artık doğru değilse kullanıcıya söyle. Kullanıcı kalıcı bir tercih ya
 da hedef belirttiğinde Hatirla aracıyla kaydet.

@@ -31,6 +31,13 @@ from .tools import Tool, _truncate
 # kullanılır; birden fazlası varsa hepsi eklenir.
 INSTRUCTION_FILES = ("AGENTS.md", "KURALLAR.md", "CLAUDE.md", "CONVENTIONS.md")
 
+# Bu boyutun üzerindeki talimat dosyaları küçük modelleri boğuyor: model
+# talimatı "cevaplanacak içerik" sanıp özetliyor ve kullanıcının asıl isteğini
+# görmezden geliyor. Ölçüldü (gemma4:e4b): 3 satırlık talimatla araç çağırıyor,
+# 194 satırlıkla yalnızca özet üretiyor. Güçlü modellerde sorun değil, o yüzden
+# kırpmıyoruz — yalnızca uyarıyoruz.
+INSTRUCTION_WARN_CHARS = 4000
+
 SHARED_MEMORY_DIR = "aider-memory"
 
 # Bellek notlarının tamamı sistem promptuna giriyor. Notlar kısa olmak zorunda;

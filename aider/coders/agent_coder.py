@@ -10,6 +10,7 @@ import json
 from aider.agent.plan import PLAN_MODE_REMINDER, ExitPlanModeTool
 from aider.agent.mcp import MCPManager
 from aider.agent.memory import (
+    INSTRUCTION_WARN_CHARS,
     HatirlaTool,
     MemoryStore,
     default_memory_roots,
@@ -119,7 +120,15 @@ class AgentCoder(Coder):
         )
         if self.instruction_files:
             adlar = ", ".join(p.name for p in self.instruction_files)
-            lines.append(f"Proje talimatları: {adlar}")
+            satir = f"Proje talimatları: {adlar}"
+            if len(self.instructions) > INSTRUCTION_WARN_CHARS:
+                satir += f"  — UZUN ({len(self.instructions)} karakter)"
+            lines.append(satir)
+            if len(self.instructions) > INSTRUCTION_WARN_CHARS:
+                lines.append(
+                    "  Küçük modeller uzun talimatı görev sanıp özetleyebilir ve araç"
+                    " çağırmaz. Sorun yaşarsan kısalt ya da başka dizinde çalış."
+                )
         if self.ctx.memory.notes:
             dusen = self.ctx.memory.dropped()
             satir = f"Bellek: {len(self.ctx.memory.notes)} not"
