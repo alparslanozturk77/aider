@@ -474,6 +474,13 @@ class AgentCoder(Coder):
         self._show_tool_call(name, args)
         result = self.registry.run(name, args, self.ctx)
         self.plan_mode = self.ctx.plan_mode
+
+        # Hata modele geri gidiyor ama kullanıcıya da görünmeli: aksi hâlde
+        # model bir aracı yanlış çağırdığında ekranda yalnızca çağrı satırı
+        # kalıyor ve neden hiçbir şey olmadığı anlaşılmıyor.
+        if isinstance(result, str) and result.startswith("Hata:"):
+            self.io.tool_error(f"    {result.splitlines()[0]}")
+
         return result
 
     def _show_tool_call(self, name, args):
@@ -482,6 +489,8 @@ class AgentCoder(Coder):
             detail = args.get("file_path", "")
         elif name == "Bash":
             detail = args.get("command", "")
+        elif name == "Ssh":
+            detail = f"{args.get('host', '?')}: {args.get('command', '')}"
         elif name in ("Grep", "Glob"):
             detail = args.get("pattern", "")
         elif name == "Skill":

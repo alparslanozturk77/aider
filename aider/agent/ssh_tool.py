@@ -55,12 +55,12 @@ def known_hosts(config_path=None):
 
 class SshTool(Tool):
     name = "Ssh"
+    # Açıklama kasıtlı olarak kısa ve örnekli: uzun prose, zayıf modellerde
+    # şemayı gölgeliyor ve model zorunlu argümanları boş bırakıyor.
+    # Gözlendi — gemma4:e4b bu aracı "Ssh()" diye argümansız çağırdı.
     description = (
-        "Uzak bir sunucuda komut çalıştırır. Sunucu adı ~/.ssh/config içinde tanımlı "
-        "bir takma ad OLMALIDIR — kullanıcının verdiği adı olduğu gibi kullan, başına "
-        "kullanıcı adı ya da sonuna alan adı EKLEME. Tanımlı olmayan bir ad verirsen "
-        "araç çalışmaz ve sana tanımlı adların listesini döndürür. Bağlantı zaman "
-        "aşımı ve parolasız mod otomatik uygulanır."
+        "Uzak sunucuda komut çalıştırır. Örnek: host=\"skyup\", command=\"df -h\". "
+        "host, kullanıcının söylediği adın aynısı olmalı — user@ ya da alan adı ekleme."
     )
     mutating = True
     parameters = {
@@ -68,11 +68,13 @@ class SshTool(Tool):
         "properties": {
             "host": {
                 "type": "string",
-                "description": "~/.ssh/config'teki takma ad, ör. 'skyup'. user@ ekleme.",
+                "description": "Sunucu takma adı. Örnek: skyup",
+                "examples": ["skyup", "fedora"],
             },
             "command": {
                 "type": "string",
-                "description": "Uzakta çalıştırılacak komut, ör. 'df -h'",
+                "description": "Uzakta çalıştırılacak komut. Örnek: df -h",
+                "examples": ["df -h", "systemctl is-active nginx"],
             },
             "timeout": {
                 "type": "integer",
