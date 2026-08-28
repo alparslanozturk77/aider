@@ -27,10 +27,14 @@ ENDPOINT_TYPES = [
         True,
     ),
     (
+        # DİKKAT: litellm'in 'ollama_chat/' sağlayıcısı araç sonucu mesajlarını
+        # (role="tool") modele ulaştırmıyor; model sonucu hiç görmüyor ve aynı
+        # aracı sonsuza dek çağırıyor. Ollama'nın OpenAI uyumlu ucu (/v1) ham
+        # istekte doğru çalıştığı için agent modunda o yol kullanılıyor.
         "ollama",
-        "Yerel Ollama",
-        "ollama_chat/",
-        "http://localhost:11434",
+        "Yerel Ollama (OpenAI uyumlu /v1 ucu üzerinden)",
+        "openai/",
+        "http://localhost:11434/v1",
         False,
     ),
     (

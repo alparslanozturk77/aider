@@ -22,23 +22,32 @@
     max_tokens: 8192
 
 # ---------------------------------------------------------------------------
-# Yerel model (Ollama). Ollama OpenAI uyumlu bir uç sunar: /v1
+# Yerel model (Ollama).
 #
-# Kullanmadan önce:
-#   ollama pull qwen3-coder:30b
+# ÖNEMLİ: 'ollama_chat/' ÖNEKİNİ KULLANMA. litellm'in o sağlayıcısı araç sonucu
+# mesajlarını (role="tool") modele ulaştırmıyor; model sonucu hiç görmediği
+# için aynı aracı sonsuza dek çağırıyor. Ölçüldü: ham curl ile hem Ollama'nın
+# kendi API'si hem /v1 ucu doğru çalışıyor, sorun yalnızca litellm katmanında.
 #
-# .env içinde ya da komut satırında taban adresi değiştir:
-#   aider --model ollama_chat/qwen3-coder:30b
+# Bunun yerine Ollama'nın OpenAI uyumlu ucunu kullan:
+#   aider --agent --model openai/qwen3-coder:30b \
+#         --openai-api-base http://localhost:11434/v1 --openai-api-key ollama
+#
+# Kullanmadan önce:  ollama pull qwen3-coder:30b
+#
+# Modelin araç çağırabildiğini önce doğrula (bkz. ornek/arac-testi.sh).
+# qwen2.5-coder:14b bu testi GEÇMİYOR: araç çağrısını düz metin olarak üretiyor.
 # ---------------------------------------------------------------------------
-- name: ollama_chat/qwen3-coder:30b
+- name: openai/qwen3-coder:30b
   edit_format: agent
   use_repo_map: true
   use_temperature: 0
   streaming: true
   extra_params:
     # Ollama'nın varsayılan bağlamı küçüktür ve agent döngüsü bağlamı hızla
-    # doldurur. Bunu modelin gerçekten desteklediği değere çek.
-    num_ctx: 65536
+    # doldurur. OpenAI uyumlu uçta bunu Modelfile ile ya da
+    # OLLAMA_CONTEXT_LENGTH ortam değişkeniyle ayarla.
+    max_tokens: 8192
 
 # ---------------------------------------------------------------------------
 # Yerel model (llama.cpp / vLLM gibi OpenAI uyumlu sunucu)
