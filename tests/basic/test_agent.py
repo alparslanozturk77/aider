@@ -1662,3 +1662,146 @@ class TestStatusBarAndModeCycle(unittest.TestCase):
         with patch("sys.stdout") as sahte:
             sahte.encoding = "utf-8"
             self.assertEqual(self.coder._marker(mode, isaret), isaret)
+
+
+# ---------------------------------------------------------------------------
+# Ssh aracı
+# ---------------------------------------------------------------------------
+
+from aider.agent.ssh_tool import SshTool, known_hosts  # noqa: E402
+
+
+class TestKnownHosts(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cfg = Path(self.tmp.name) / "config"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_reads_host_aliases(self):
+        self.cfg.write_text("Host skyup\n  HostName 1.2.3.4\nHost web01\n", encoding="utf-8")
+        self.assertEqual(known_hosts(self.cfg), ["skyup", "web01"])
+
+    def test_wildcard_entries_are_skipped(self):
+        # 'Host *' bağlanılacak bir sunucu değil, diğerlerine uygulanan varsayılan.
+        self.cfg.write_text("Host *\n  User root\nHost skyup\n", encoding="utf-8")
+        self.assertEqual(known_hosts(self.cfg), ["skyup"])
+
+    def test_multiple_aliases_on_one_line(self):
+        self.cfg.write_text("Host web01 web02\n", encoding="utf-8")
+        self.assertEqual(known_hosts(self.cfg), ["web01", "web02"])
+
+    def test_missing_file_is_not_an_error(self):
+        self.assertEqual(known_hosts(Path(self.tmp.name) / "yok"), [])
+
+    def test_case_insensitive_keyword(self):
+        self.cfg.write_text("host skyup\n", encoding="utf-8")
+        self.assertEqual(known_hosts(self.cfg), ["skyup"])
+
+
+class TestSshTool(unittest.TestCase):
+    """Aracın asıl işi sunucu adı uydurmayı engellemek."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.ctx = make_ctx(self.root)
+        self.tool = SshTool()
+        self.patcher = patch(
+            "aider.agent.ssh_tool.known_hosts", return_value=["skyup", "fedora"]
+        )
+        self.patcher.start()
+        self.addCleanup(self.patcher.stop)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_user_at_host_is_rejected(self):
+        # Gözlenen hata: kullanıcı 'skyup' dedi, model 'skyup@kurum.local' üretti.
+        with self.assertRaises(ToolError) as cm:
+            self.tool.run(self.ctx, host="skyup@kurum.local", command="df -h")
+        self.assertIn("olduğu gibi kullan", str(cm.exception))
+
+    def test_rejection_suggests_the_right_alias(self):
+        with self.assertRaises(ToolError) as cm:
+            self.tool.run(self.ctx, host="root@skyup.kurum.local", command="df -h")
+        self.assertIn("skyup", str(cm.exception))
+
+    def test_domain_suffix_is_rejected(self):
+        with self.assertRaises(ToolError):
+            self.tool.run(self.ctx, host="skyup.kurum.local", command="df -h")
+
+    def test_unknown_alias_is_rejected_and_lists_known_ones(self):
+        with self.assertRaises(ToolError) as cm:
+            self.tool.run(self.ctx, host="yokboyle", command="df -h")
+        mesaj = str(cm.exception)
+        self.assertIn("skyup", mesaj)
+        self.assertIn("fedora", mesaj)
+
+    def test_empty_host_rejected(self):
+        with self.assertRaises(ToolError):
+            self.tool.run(self.ctx, host="", command="df -h")
+
+    def test_empty_command_rejected(self):
+        with self.assertRaises(ToolError):
+            self.tool.run(self.ctx, host="skyup", command="")
+
+    def test_declined_confirmation_does_not_connect(self):
+        ctx = make_ctx(self.root, confirm=False)
+        ctx.permissions = None
+        with patch("subprocess.run") as sahte:
+            out = self.tool.run(ctx, host="skyup", command="df -h")
+        sahte.assert_not_called()
+        self.assertIn("reddetti", out)
+
+    def test_valid_alias_gets_timeout_and_batchmode(self):
+        with patch("subprocess.run") as sahte:
+            sahte.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            self.tool.run(self.ctx, host="skyup", command="df -h")
+        argv = sahte.call_args[0][0]
+        self.assertIn("ConnectTimeout=5", argv)
+        self.assertIn("BatchMode=yes", argv)
+        self.assertEqual(argv[-2:], ["skyup", "df -h"])
+
+    def test_connection_failure_is_reported_clearly(self):
+        with patch("subprocess.run") as sahte:
+            sahte.return_value = MagicMock(
+                returncode=255, stdout="", stderr="Could not resolve hostname"
+            )
+            out = self.tool.run(self.ctx, host="skyup", command="df -h")
+        self.assertIn("bağlanılamadı", out)
+
+    def test_remote_nonzero_exit_is_surfaced(self):
+        with patch("subprocess.run") as sahte:
+            sahte.return_value = MagicMock(returncode=2, stdout="", stderr="no such file")
+            out = self.tool.run(self.ctx, host="skyup", command="cat yok")
+        self.assertIn("çıkış kodu 2", out)
+
+    def test_timeout_is_capped(self):
+        with patch("subprocess.run") as sahte:
+            sahte.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            self.tool.run(self.ctx, host="skyup", command="ls", timeout=99999)
+        self.assertLessEqual(sahte.call_args[1]["timeout"], 600)
+
+    def test_tool_is_registered_in_agent_coder(self):
+        from aider.coders import Coder
+        from aider.io import InputOutput
+        from aider.models import Model
+
+        with tempfile.TemporaryDirectory() as tmp:
+            prev = os.getcwd()
+            os.chdir(tmp)
+            try:
+                coder = Coder.create(
+                    main_model=Model("gpt-4o"),
+                    edit_format="agent",
+                    io=InputOutput(yes=True, pretty=False, fancy_input=False),
+                    fnames=[],
+                    use_git=False,
+                )
+                self.assertIn("Ssh", coder.registry.names())
+                # Yan etkili sayılmalı: plan modunda sunulmamalı.
+                self.assertTrue(coder.registry.get("Ssh").mutating)
+            finally:
+                os.chdir(prev)

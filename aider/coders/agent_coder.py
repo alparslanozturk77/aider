@@ -20,6 +20,7 @@ from aider.agent.memory import (
 from aider.agent.permissions import MODE_ASK, MODE_AUTO, MODE_PLAN, load_permissions
 from aider.agent.registry import ToolContext, ToolRegistry
 from aider.agent.skills import SkillLibrary, SkillTool, default_skill_roots
+from aider.agent.ssh_tool import SshTool
 from aider.agent.todo import TodoList, TodoWriteTool
 from aider.agent.tools import (
     BashTool,
@@ -61,6 +62,7 @@ class AgentCoder(Coder):
             WriteTool(),
             EditTool(),
             BashTool(),
+            SshTool(),
             GlobTool(),
             GrepTool(),
             TodoWriteTool(),

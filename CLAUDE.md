@@ -27,6 +27,7 @@ Agent katmanı ayrı bir pakette; `base_coder.py`'ye ameliyat yapılmadı.
 aider/agent/
   registry.py     ToolRegistry, ToolContext, ToolError
   tools.py        Read, Write, Edit, Bash, Glob, Grep
+  ssh_tool.py     Ssh — sunucu adını ~/.ssh/config'e karşı doğrular
   permissions.py  Kural tabanlı izin sistemi
   mcp.py          MCP istemcisi (stdio, JSON-RPC 2.0)
   skills.py       SKILL.md keşfi ve kademeli açılım
@@ -152,6 +153,8 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 | `mcp-ekle` | MCP sunucusu ekleme, teşhis, çevrimdışı kurulum |
 | `upstream-birlestir` | Upstream'den güncelleme |
 | `rhel-yonetim` | RHEL sistem yönetimi, Satellite, IdM |
+| `ag-teshis` | Ağ, güvenlik duvarı, SELinux |
+| `depolama` | Disk dolması, LVM, mount |
 | `k8s-rancher` | Kubernetes/Rancher teşhisi, docker |
 | `servis-teshis` | PostgreSQL, Redis, RabbitMQ, Nginx, Apache |
 | `rapor-uret` | CSV / Excel / PDF / HTML rapor üretimi |
