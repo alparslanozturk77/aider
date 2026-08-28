@@ -151,4 +151,13 @@ class SkillTool(Tool):
         out = found.render()
         if args:
             out += f"\n\n---\nBeceriye verilen argümanlar: {args}"
+
+        # Büyük bir metin bağlama girdikten sonra zayıf modeller asıl görevi
+        # kaybedip "hazırım, ne yapayım" diye soruyor. Ölçüldü: gemma4:e4b
+        # beceriyi yükledikten sonra tam olarak bunu yapıyordu.
+        out += (
+            "\n\n---\n"
+            "Yukarıdakiler talimattır, görev değildir. Şimdi kullanıcının son "
+            "mesajındaki işi bu talimatları izleyerek YAP. Ne yapacağını sorma."
+        )
         return out
