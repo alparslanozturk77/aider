@@ -1516,3 +1516,127 @@ class TestMemoryInAgentCoder(unittest.TestCase):
         prompt = coder.fmt_system_prompt(coder.gpt_prompts.main_system)
         self.assertNotIn("# Bellek", prompt)
         self.assertNotIn("# Proje talimatları", prompt)
+
+
+# ---------------------------------------------------------------------------
+# Durum çubuğu ve shift+tab ile mod değiştirme
+# ---------------------------------------------------------------------------
+
+
+class TestStatusBarAndModeCycle(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.prev = os.getcwd()
+        os.chdir(self.tmp.name)
+        self.coder = self._coder()
+
+    def tearDown(self):
+        os.chdir(self.prev)
+        self.tmp.cleanup()
+
+    def _coder(self, **kw):
+        from aider.coders import Coder
+        from aider.io import InputOutput
+        from aider.models import Model
+
+        self.io = InputOutput(yes=True, pretty=False, fancy_input=False)
+        return Coder.create(
+            main_model=Model("gpt-4o"),
+            edit_format="agent",
+            io=self.io,
+            fnames=[],
+            use_git=False,
+            stream=False,
+            **kw,
+        )
+
+    def _plain(self):
+        return "".join(t for _, t in self.coder._status_text())
+
+    def test_hooks_are_installed_on_io(self):
+        # Bunlar olmadan çubuk çizilmez ve shift+tab çalışmaz.
+        self.assertTrue(callable(self.io.agent_status))
+        self.assertTrue(callable(self.io.agent_cycle_mode))
+
+    def test_other_coders_do_not_get_the_hooks(self):
+        from aider.coders import Coder
+        from aider.io import InputOutput
+        from aider.models import Model
+
+        io = InputOutput(yes=True, pretty=False, fancy_input=False)
+        Coder.create(
+            main_model=Model("gpt-4o"), edit_format="diff", io=io, fnames=[], use_git=False
+        )
+        self.assertIsNone(io.agent_status)
+        self.assertIsNone(io.agent_cycle_mode)
+
+    def test_cycle_visits_every_mode_and_returns(self):
+        gorulen = []
+        for _ in range(len(self.coder.MODE_CYCLE)):
+            gorulen.append(self.coder.current_mode())
+            self.coder.cycle_mode()
+        self.assertEqual(set(gorulen), set(self.coder.MODE_CYCLE))
+        # Döngü başladığı yere dönmeli.
+        self.assertEqual(self.coder.current_mode(), gorulen[0])
+
+    def test_status_names_the_next_mode(self):
+        # shift+tab'ın ne yapacağı basmadan önce görünmeli.
+        for _ in range(len(self.coder.MODE_CYCLE)):
+            mode = self.coder.current_mode()
+            idx = self.coder.MODE_CYCLE.index(mode)
+            sonraki = self.coder.MODE_CYCLE[(idx + 1) % len(self.coder.MODE_CYCLE)]
+            self.assertIn(self.coder.MODE_LABELS[sonraki][0], self._plain())
+            self.coder.cycle_mode()
+
+    def test_status_shows_current_mode_label(self):
+        while self.coder.current_mode() != "plan":
+            self.coder.cycle_mode()
+        self.assertIn("plan", self._plain())
+        self.assertIn("salt-okunur", self._plain())
+
+    def test_cycling_to_plan_hides_mutating_tools(self):
+        while self.coder.current_mode() != "plan":
+            self.coder.cycle_mode()
+        araclar = self.coder.available_tools()
+        for ad in ("Write", "Edit", "Bash", "Hatirla"):
+            self.assertNotIn(ad, araclar)
+        self.assertIn("ExitPlanMode", araclar)
+        self.assertIn("Read", araclar)
+
+    def test_cycling_out_of_plan_restores_mutating_tools(self):
+        while self.coder.current_mode() != "plan":
+            self.coder.cycle_mode()
+        self.coder.cycle_mode()
+        araclar = self.coder.available_tools()
+        self.assertIn("Write", araclar)
+        self.assertIn("Bash", araclar)
+        self.assertNotIn("ExitPlanMode", araclar)
+
+    def test_cycle_updates_the_permission_engine(self):
+        while self.coder.current_mode() != "auto":
+            self.coder.cycle_mode()
+        self.assertEqual(self.coder.ctx.permissions.mode, "auto")
+        self.assertEqual(
+            self.coder.ctx.permissions.decide("Bash", {"command": "echo hi"}, True), ALLOW
+        )
+
+    def test_auto_mode_still_denies_dangerous_commands(self):
+        # Mod değiştirmek yerleşik güvenlik listesini devre dışı bırakmamalı.
+        while self.coder.current_mode() != "auto":
+            self.coder.cycle_mode()
+        self.assertEqual(
+            self.coder.ctx.permissions.decide("Bash", {"command": "rm -rf /"}, True), DENY
+        )
+
+    def test_plan_flag_starts_in_plan_mode(self):
+        self.coder = self._coder(plan_mode=True)
+        self.assertEqual(self.coder.current_mode(), "plan")
+
+    def test_status_text_is_renderable_formatted_text(self):
+        from prompt_toolkit.formatted_text import FormattedText
+
+        ft = self.coder._status_text()
+        self.assertIsInstance(ft, FormattedText)
+        for style, text in ft:
+            self.assertIsInstance(style, str)
+            self.assertIsInstance(text, str)

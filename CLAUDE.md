@@ -163,6 +163,18 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 
 Yeni beceri: `/skills new <ad>` — iskeleti `aider-skills/` altına yazar.
 
+## Durum çubuğu
+
+Girdi satırının altında mevcut izin modunu, `shift+tab`'ın hangi moda geçeceğini
+ve yüklü beceri/not sayısını gösteren bir çubuk var.
+
+`shift+tab` modlar arasında dolaşır: plan → onay → oto → plan. Sıradaki mod
+çubukta yazdığı için kullanıcı basmadan önce ne olacağını bilir.
+
+Upstream'e dokunuş `io.py`'de üç nokta: `agent_status` ve `agent_cycle_mode`
+kancaları, ve `prompt()` çağrısına `bottom_toolbar`. İkisi de diğer coder'larda
+`None` kalır.
+
 ## Bellek ve proje talimatları
 
 Upstream aider'da ikisi de yoktu; agent katmanı ekledi.
