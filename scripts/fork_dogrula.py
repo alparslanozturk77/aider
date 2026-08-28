@@ -18,6 +18,7 @@ Kullanım:
 
 import argparse
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -247,6 +248,107 @@ def _check_gitignore():
     leaking = [p for p in must_be_ignored if not ignored(p)]
     if leaking:
         raise Fail(f"gizli bilgi taşıyan dosyalar ignore edilmiyor: {', '.join(leaking)}")
+
+
+# ---------------------------------------------------------------------------
+# aider/io.py
+# ---------------------------------------------------------------------------
+
+
+@check(
+    "io kancaları",
+    "aider/io.py",
+    "Mod göstergesi prompt önekine bu kancayla giriyor ve shift+tab buna "
+    "bağlı. Kanca düşerse mod görünmez olur, kullanıcı hangi modda olduğunu "
+    "bilemez.",
+)
+def _check_io_hooks():
+    import inspect
+
+    from aider.io import InputOutput
+
+    io = InputOutput(yes=True, pretty=False, fancy_input=False)
+    for ad in ("agent_status", "agent_cycle_mode"):
+        if not hasattr(io, ad):
+            raise Fail(f"InputOutput.{ad} yok")
+        if getattr(io, ad) is not None:
+            raise Fail(f"{ad} varsayılan olarak None olmalı, diğer coder'ları etkilememeli")
+
+    src = inspect.getsource(InputOutput.get_input)
+    if "self.agent_status()" not in src:
+        raise Fail("prompt öneki agent_status'u çağırmıyor — mod göstergesi kaybolmuş")
+    if '@kb.add("s-tab")' not in src:
+        raise Fail("shift+tab bağlaması yok")
+
+    # Geri alınmış bir denemeydi; geri gelirse terminali bozar.
+    if "bottom_toolbar=self.agent_status" in src:
+        raise Fail(
+            "bottom_toolbar geri gelmiş — terminali raw modda bırakıp merdiven "
+            "etkisi yapıyor, bilinçli olarak kaldırılmıştı"
+        )
+
+
+@check(
+    "agent kancaları bağlanıyor",
+    "aider/coders/agent_coder.py",
+    "AgentCoder kancaları doldurmazsa mod göstergesi hiç görünmez.",
+)
+def _check_hooks_installed():
+    import tempfile
+
+    from aider.coders import Coder
+    from aider.io import InputOutput
+    from aider.models import Model
+
+    with tempfile.TemporaryDirectory() as tmp:
+        onceki = os.getcwd()
+        os.chdir(tmp)
+        try:
+            io = InputOutput(yes=True, pretty=False, fancy_input=False)
+            coder = Coder.create(
+                main_model=Model("gpt-4o"), edit_format="agent", io=io,
+                fnames=[], use_git=False,
+            )
+            if not callable(io.agent_status):
+                raise Fail("AgentCoder io.agent_status'u doldurmuyor")
+            if not callable(io.agent_cycle_mode):
+                raise Fail("AgentCoder io.agent_cycle_mode'u doldurmuyor")
+            if not coder._status_text().strip():
+                raise Fail("mod göstergesi boş dönüyor")
+
+            # Diğer coder'lar etkilenmemeli.
+            io2 = InputOutput(yes=True, pretty=False, fancy_input=False)
+            Coder.create(
+                main_model=Model("gpt-4o"), edit_format="diff", io=io2,
+                fnames=[], use_git=False,
+            )
+            if io2.agent_status is not None:
+                raise Fail("agent olmayan coder'da kanca doluyor — upstream davranışı bozulur")
+        finally:
+            os.chdir(onceki)
+
+
+# ---------------------------------------------------------------------------
+# aider/commands.py
+# ---------------------------------------------------------------------------
+
+
+@check(
+    "slash komutları",
+    "aider/commands.py",
+    "Agent katmanının kullanıcı arayüzü bu komutlar. Bir merge Commands "
+    "sınıfını yeniden düzenlerse sessizce düşebilirler.",
+)
+def _check_commands():
+    from aider.commands import Commands
+
+    gerekli = [
+        "agent", "plan", "mod", "skills", "mcp", "permissions",
+        "todo", "hatirla", "bellek", "unut", "model_ekle",
+    ]
+    eksik = [k for k in gerekli if not hasattr(Commands, f"cmd_{k}")]
+    if eksik:
+        raise Fail("eksik komutlar: " + ", ".join("/" + k.replace("_", "-") for k in eksik))
 
 
 # ---------------------------------------------------------------------------

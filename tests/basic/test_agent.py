@@ -1881,3 +1881,61 @@ class TestToolResultVisibility(unittest.TestCase):
         cikti, hata = self._basilan("Bash", "   \n  ")
         self.assertEqual(cikti, [])
         self.assertEqual(hata, [])
+
+
+class TestEmptyModelReply(unittest.TestCase):
+    """Model ne araç çağırıp ne bir şey söylediğinde kullanıcı uyarılmalı."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.prev = os.getcwd()
+        os.chdir(self.tmp.name)
+
+    def tearDown(self):
+        os.chdir(self.prev)
+        self.tmp.cleanup()
+
+    def _coder(self, responses):
+        from aider.coders import Coder
+        from aider.io import InputOutput
+        from aider.models import Model
+
+        self.io = InputOutput(yes=True, pretty=False, fancy_input=False)
+        coder = Coder.create(
+            main_model=Model("gpt-4o"),
+            edit_format="agent",
+            io=self.io,
+            fnames=[],
+            use_git=False,
+            stream=False,
+        )
+        coder.auto_lint = coder.auto_test = False
+        sayac = {"n": 0}
+
+        def sahte(messages, functions, stream, temperature=None):
+            i = sayac["n"]
+            sayac["n"] += 1
+            return MagicMock(), FakeCompletion(responses[i])
+
+        coder.main_model.send_completion = sahte
+        return coder
+
+    def test_empty_reply_warns_the_user(self):
+        coder = self._coder([FakeMessage(content="")])
+        with patch.object(self.io, "tool_warning") as uyari:
+            list(coder.send_message("bir şey yap"))
+        self.assertTrue(uyari.called)
+        self.assertIn("boş yanıt", uyari.call_args[0][0])
+
+    def test_whitespace_only_reply_also_warns(self):
+        coder = self._coder([FakeMessage(content="   \n  ")])
+        with patch.object(self.io, "tool_warning") as uyari:
+            list(coder.send_message("bir şey yap"))
+        self.assertTrue(uyari.called)
+
+    def test_normal_reply_does_not_warn(self):
+        coder = self._coder([FakeMessage(content="İşte cevabım.")])
+        with patch.object(self.io, "tool_warning") as uyari:
+            list(coder.send_message("bir şey yap"))
+        mesajlar = [c.args[0] for c in uyari.call_args_list if c.args]
+        self.assertFalse(any("boş yanıt" in m for m in mesajlar))

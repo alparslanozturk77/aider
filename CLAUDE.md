@@ -40,7 +40,7 @@ aider/coders/
   agent_prompts.py   Sistem promptu
 ```
 
-### Upstream'e dokunulan beş nokta
+### Upstream'e dokunulan yedi nokta
 
 Çakışma yüzeyi bilinçli olarak buraya sınırlandı. Bir upstream dosyasını
 değiştirmek zorunda kalırsan yamayı en küçük blokta tut ve nedenini yorumda yaz.
@@ -51,6 +51,8 @@ değiştirmek zorunda kalırsan yamayı en küçük blokta tut ve nedenini yorum
 | `aider/coders/__init__.py` | `AgentCoder` kaydı |
 | `aider/args.py` | `--agent`, `--plan`, `--auto`, `--permission-mode`, `--max-tool-iterations` |
 | `aider/main.py` | Agent kwarg'larının yalnızca agent coder'a geçirilmesi |
+| `aider/io.py` | Mod göstergesi kancaları ve `shift+tab` |
+| `aider/commands.py` | On bir slash komutu |
 | `.gitignore` | `.env` ve `.mcp.json` ignore |
 
 En kritik olanı `models.py`: upstream `tool_choice`'u **tek bir fonksiyona
@@ -123,7 +125,7 @@ Onsuz komut, izlenen dosyalar için desen eşleşse bile "ignore edilmiyor" der.
 .venv/bin/python scripts/fork_dogrula.py
 ```
 
-Bu betik fork'un beş dokunuş noktasının hâlâ **çalıştığını** doğrular — dosyada
+Bu betik fork'un yedi dokunuş noktasının hâlâ **çalıştığını** doğrular — dosyada
 metin aramaz, kodu gerçekten çağırır. Bir merge yaman satırları koruyup
 davranışı bozabilir; metin araması bunu kaçırır.
 
@@ -134,8 +136,9 @@ Tüm yordamı otomatik yürüten sarmalayıcı:
 ./scripts/upstream_birlestir.sh v0.90.0      # belirli bir etiket
 ```
 
-Ayrıntılı yordam ve çakışma çözme rehberi: `aider-skills/upstream-birlestir/SKILL.md`
-(agent modunda `/skills` ile de erişilir).
+Ayrıntılı yordam, her dokunuş noktasının tam yaması ve çakışma çözme rehberi:
+**`BIRLESTIRME.md`**. Aylar sonra okuyacak kişi için yazıldı; yamaları elle
+geri koyabilecek kadar ayrıntılı.
 
 ## Beceriler
 

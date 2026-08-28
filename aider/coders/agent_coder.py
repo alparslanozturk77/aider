@@ -322,6 +322,14 @@ class AgentCoder(Coder):
             turn_messages.append(assistant_msg)
 
             if not tool_calls:
+                # Model ne araç çağırdı ne de bir şey söyledi. Sessiz kalmak
+                # kullanıcıya "bir şey oldu ama göremiyorum" hissi veriyor;
+                # zayıf modellerde bu sık oluyor.
+                if not (content or "").strip():
+                    self.io.tool_warning(
+                        "Model boş yanıt verdi — araç da çağırmadı. İsteği daha kısa ve "
+                        "tek adımlı yazmayı dene."
+                    )
                 break
 
             for call in tool_calls:
