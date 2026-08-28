@@ -1103,9 +1103,18 @@ class TestModelSetup(unittest.TestCase):
         name, _ = self._run(["1", "openai/qwen3-coder", "https://x/v1", "k", "", ""])
         self.assertEqual(name, "openai/qwen3-coder")
 
-    def test_ollama_uses_its_own_prefix(self):
-        name, _ = self._run(["2", "qwen3-coder:30b", "http://localhost:11434", "", "", ""])
-        self.assertTrue(name.startswith("ollama_chat/"), name)
+    def test_ollama_uses_openai_provider_not_ollama_chat(self):
+        # litellm'in 'ollama_chat/' sağlayıcısı araç sonucu mesajlarını modele
+        # ulaştırmıyor; model sonucu görmediği için sonsuz döngüye giriyor.
+        # Ollama'nın OpenAI uyumlu /v1 ucu doğru çalıştığı için o kullanılıyor.
+        name, _ = self._run(["2", "qwen3-coder:30b", "http://localhost:11434/v1", "", "", ""])
+        self.assertTrue(name.startswith("openai/"), name)
+        self.assertNotIn("ollama_chat", name)
+
+    def test_ollama_default_base_points_at_v1(self):
+        # /v1 olmadan OpenAI uyumlu uc calismaz.
+        self._run(["2", "m", "", "", "", ""])
+        self.assertTrue(self._conf()["openai-api-base"].endswith("/v1"))
 
     def test_edit_format_defaults_to_agent(self):
         self._run(["1", "m", "https://x/v1", "k", "", ""])

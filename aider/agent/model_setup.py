@@ -142,6 +142,9 @@ def run_setup(io, home=None):
     model_name = raw_name if "/" in raw_name else prefix + raw_name
 
     api_base = io.prompt_ask("Endpoint adresi (sonu /v1)", default=default_base).strip()
+    # Kullanıcı alanı temizlerse endpoint tipinin varsayılanına dön; adressiz
+    # yapılandırma sessizce yanlış sunucuya (api.openai.com) gider.
+    api_base = api_base or default_base
 
     api_key = ""
     if needs_key or api_base:
