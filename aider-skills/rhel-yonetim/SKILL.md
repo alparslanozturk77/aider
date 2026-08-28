@@ -29,6 +29,25 @@ ipa user-find --help
 Yardım çıktısını okumadan `hammer` ya da `ipa` komutu çalıştırma. Araç
 kurulu değilse kullanıcıya söyle, tahmin yürütme.
 
+## Uzak sunucuya bağlanırken
+
+`ssh` varsayılan olarak ulaşılamayan bir adreste dakikalarca bekler. Uzak
+komutlarda **her zaman** bağlantı zaman aşımı ver:
+
+```bash
+ssh -o ConnectTimeout=5 -o BatchMode=yes <sunucu> 'df -h'
+```
+
+`BatchMode=yes` parola sorulmasını engeller: anahtar yoksa komut takılmak
+yerine hemen hata verir. Agent'ın terminali olmadığı için parola istemi
+zaten cevaplanamaz.
+
+Adres çözülmüyorsa önce onu söyle, bağlanmayı deneme:
+
+```bash
+getent hosts <sunucu> || echo "ad çözülemedi"
+```
+
 ## Salt-okunur ile yan etkiliyi ayır
 
 Önce durum topla, sonra değiştir. Değiştirmeden önce onay al.

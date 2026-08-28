@@ -99,6 +99,75 @@ class AgentCoder(Coder):
             )
             self.ctx.permissions = load_permissions(self.root, mode=MODE_ASK)
 
+        self._install_status_bar()
+
+    # ------------------------------------------------------------------
+    # Durum çubuğu ve mod değiştirme
+    # ------------------------------------------------------------------
+
+    # shift+tab bu sırayla dolaşır.
+    MODE_CYCLE = (MODE_PLAN, MODE_ASK, MODE_AUTO)
+
+    MODE_LABELS = {
+        MODE_PLAN: ("plan", "salt-okunur, dosyaya dokunmaz"),
+        MODE_ASK: ("onay", "her değişiklikte sorar"),
+        MODE_AUTO: ("oto", "reddedilmedikçe sormaz"),
+    }
+
+    def current_mode(self):
+        if self.ctx.plan_mode:
+            return MODE_PLAN
+        return self.ctx.permissions.mode if self.ctx.permissions else MODE_ASK
+
+    def _install_status_bar(self):
+        """io katmanına durum çubuğunu ve shift+tab davranışını bağla."""
+        self.io.agent_status = self._status_text
+        self.io.agent_cycle_mode = self.cycle_mode
+
+    def _status_text(self):
+        """Girdi satırının altında görünen tek satır."""
+        from prompt_toolkit.formatted_text import FormattedText
+
+        mode = self.current_mode()
+        ad, aciklama = self.MODE_LABELS[mode]
+
+        # Sıradaki modu göstermek shift+tab'ın ne yapacağını tahmin edilebilir
+        # kılıyor; kullanıcı denemeden biliyor.
+        sonraki = self.MODE_CYCLE[(self.MODE_CYCLE.index(mode) + 1) % len(self.MODE_CYCLE)]
+        sonraki_ad = self.MODE_LABELS[sonraki][0]
+
+        renk = {
+            MODE_PLAN: "ansiblue",
+            MODE_ASK: "ansigreen",
+            MODE_AUTO: "ansiyellow",
+        }[mode]
+
+        parts = [
+            (f"bold {renk}", f" {ad} "),
+            ("", f"— {aciklama}"),
+            ("ansibrightblack", f"   shift+tab → {sonraki_ad}"),
+            ("ansibrightblack", "   /help komutlar"),
+        ]
+
+        n = len(self.ctx.skills.skills)
+        if n:
+            parts.append(("ansibrightblack", f"   {n} beceri"))
+        if self.ctx.memory.notes:
+            parts.append(("ansibrightblack", f"   {len(self.ctx.memory.notes)} not"))
+
+        return FormattedText(parts)
+
+    def cycle_mode(self):
+        """shift+tab: plan → onay → oto → plan."""
+        mode = self.current_mode()
+        yeni = self.MODE_CYCLE[(self.MODE_CYCLE.index(mode) + 1) % len(self.MODE_CYCLE)]
+
+        self.ctx.plan_mode = yeni == MODE_PLAN
+        self.plan_mode = self.ctx.plan_mode
+        if self.ctx.permissions and yeni != MODE_PLAN:
+            self.ctx.permissions.mode = yeni
+        return yeni
+
     def rebuild_registry(self):
         """MCP sunucuları yeniden başlatıldıktan sonra araç listesini tazele."""
         self.registry = ToolRegistry(self._builtin_tools + self.mcp.tools)

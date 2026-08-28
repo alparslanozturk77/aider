@@ -267,6 +267,11 @@ class InputOutput:
         self.placeholder = None
         self.interrupted = False
         self.never_prompts = set()
+
+        # Agent katmani icin iki opsiyonel kanca. AgentCoder bunlari doldurur;
+        # diger coder'larda None kalir ve hicbir davranis degismez.
+        self.agent_status = None       # callable -> alt bilgi cubugu metni
+        self.agent_cycle_mode = None   # callable -> shift+tab ile mod degistir
         self.editingmode = editingmode
         self.multiline_mode = multiline_mode
         self.bell_on_next_input = False
@@ -579,6 +584,13 @@ class InputOutput:
             "Suspend to background with ctrl-z"
             suspend_to_bg(event)
 
+        @kb.add("s-tab")
+        def _(event):
+            """Shift+Tab: agent izin modlari arasinda gecis yap."""
+            if self.agent_cycle_mode:
+                self.agent_cycle_mode()
+                event.app.invalidate()
+
         @kb.add("c-space")
         def _(event):
             "Ignore Ctrl when pressing space bar"
@@ -663,6 +675,7 @@ class InputOutput:
                         key_bindings=kb,
                         complete_while_typing=True,
                         prompt_continuation=get_continuation,
+                        bottom_toolbar=self.agent_status,
                     )
                 else:
                     line = input(show)
