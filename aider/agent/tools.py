@@ -412,6 +412,12 @@ class GrepTool(Tool):
             return f"'{pattern}' için eşleşme yok"
         if head_limit:
             lines = lines[: int(head_limit)]
+
+        # Yollar proje köküne göreli olsun: mutlak yollar hem okunmuyor hem
+        # bağlamda gereksiz yer kaplıyor.
+        kok = str(Path(ctx.root).resolve()) + os.sep
+        lines = [ln.replace(kok, "") for ln in lines]
+
         return _truncate("\n".join(lines))
 
     def _python_fallback(self, ctx, pattern, target, glob, output_mode, case_insensitive):

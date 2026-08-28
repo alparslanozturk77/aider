@@ -1805,3 +1805,79 @@ class TestSshTool(unittest.TestCase):
                 self.assertTrue(coder.registry.get("Ssh").mutating)
             finally:
                 os.chdir(prev)
+
+
+class TestToolResultVisibility(unittest.TestCase):
+    """Araç çıktısı kullanıcıya görünmeli.
+
+    Görünmediğinde, model zayıf olup sonucu özetlemediğinde ekranda yalnızca
+    çağrı satırı kalıyordu: komut çalışıyor, veri geliyor, kullanıcı hiçbir
+    şey görmüyor.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.prev = os.getcwd()
+        os.chdir(self.tmp.name)
+
+        from aider.coders import Coder
+        from aider.io import InputOutput
+        from aider.models import Model
+
+        self.io = InputOutput(yes=True, pretty=False, fancy_input=False)
+        self.coder = Coder.create(
+            main_model=Model("gpt-4o"),
+            edit_format="agent",
+            io=self.io,
+            fnames=[],
+            use_git=False,
+            stream=False,
+        )
+
+    def tearDown(self):
+        os.chdir(self.prev)
+        self.tmp.cleanup()
+
+    def _basilan(self, name, result):
+        with patch.object(self.io, "tool_output") as cikti, patch.object(
+            self.io, "tool_error"
+        ) as hata:
+            self.coder._show_tool_result(name, result)
+        return (
+            [c.args[0] for c in cikti.call_args_list if c.args],
+            [c.args[0] for c in hata.call_args_list if c.args],
+        )
+
+    def test_short_output_is_shown_in_full(self):
+        cikti, _ = self._basilan("Bash", "bir\niki\nüç")
+        self.assertEqual(len(cikti), 3)
+        self.assertIn("iki", cikti[1])
+
+    def test_long_output_is_truncated_with_a_count(self):
+        from aider.coders.agent_coder import RESULT_PREVIEW_LINES
+
+        cikti, _ = self._basilan("Bash", "\n".join(str(i) for i in range(40)))
+        self.assertEqual(len(cikti), RESULT_PREVIEW_LINES + 1)
+        self.assertIn("satır daha", cikti[-1])
+
+    def test_file_reads_get_a_shorter_preview(self):
+        # Dosya içeriği ekranı doldurmasın; model zaten tamamını görüyor.
+        cikti, _ = self._basilan("Read", "\n".join(str(i) for i in range(40)))
+        self.assertLess(len(cikti), 6)
+
+    def test_errors_go_to_the_error_channel(self):
+        cikti, hata = self._basilan("Ssh", "Hata: host zorunlu")
+        self.assertEqual(cikti, [])
+        self.assertEqual(len(hata), 1)
+        self.assertIn("host zorunlu", hata[0])
+
+    def test_self_printing_tools_are_not_duplicated(self):
+        # TodoWrite kendi listesini zaten basıyor.
+        cikti, hata = self._basilan("TodoWrite", "Görev listesi güncellendi (1/2)")
+        self.assertEqual(cikti, [])
+        self.assertEqual(hata, [])
+
+    def test_empty_result_prints_nothing(self):
+        cikti, hata = self._basilan("Bash", "   \n  ")
+        self.assertEqual(cikti, [])
+        self.assertEqual(hata, [])

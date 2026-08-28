@@ -149,4 +149,6 @@ class SshTool(Tool):
         if proc.returncode != 0:
             cikti += f"\n[uzak komut çıkış kodu {proc.returncode}]"
 
-        return _truncate(f"{host}$ {command}\n{cikti}")
+        # Komutu tekrar yazdırmıyoruz: hem araç çağrısı satırı hem onay istemi
+        # zaten gösteriyor, üç kez tekrarlanıyordu.
+        return _truncate(cikti)

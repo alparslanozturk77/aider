@@ -39,6 +39,10 @@ from .base_coder import Coder
 # döngüsünde sonsuza dek dönmesini engeller.
 DEFAULT_MAX_ITERATIONS = 50
 
+# Araç çıktısından kullanıcıya gösterilecek azami satır. Model zayıf olup
+# sonucu özetlemese bile kullanıcı ham veriyi görsün diye var.
+RESULT_PREVIEW_LINES = 15
+
 
 class AgentCoder(Coder):
     """Claude Code tarzı araç döngüsü."""
@@ -475,13 +479,36 @@ class AgentCoder(Coder):
         result = self.registry.run(name, args, self.ctx)
         self.plan_mode = self.ctx.plan_mode
 
-        # Hata modele geri gidiyor ama kullanıcıya da görünmeli: aksi hâlde
-        # model bir aracı yanlış çağırdığında ekranda yalnızca çağrı satırı
-        # kalıyor ve neden hiçbir şey olmadığı anlaşılmıyor.
-        if isinstance(result, str) and result.startswith("Hata:"):
-            self.io.tool_error(f"    {result.splitlines()[0]}")
+        # Sonuç modele gidiyor ama kullanıcıya da görünmeli. Görünmezse model
+        # zayıf olduğunda ekranda yalnızca çağrı satırı kalıyor: komut çalıştı,
+        # veri geldi, ama kullanıcı hiçbir şey görmüyor.
+        self._show_tool_result(name, result)
 
         return result
+
+    def _show_tool_result(self, name, result):
+        """Araç çıktısını kullanıcıya özetleyerek göster."""
+        if not isinstance(result, str) or not result.strip():
+            return
+
+        if result.startswith("Hata:"):
+            self.io.tool_error(f"    {result.splitlines()[0]}")
+            return
+
+        # Zaten kendi çıktısını basan araçlar iki kez gösterilmesin.
+        if name in ("TodoWrite", "ExitPlanMode"):
+            return
+
+        # Beceri gövdeleri ve dosya içerikleri uzun; ekranı doldurmasınlar.
+        limit = 3 if name in ("Read", "Skill") else RESULT_PREVIEW_LINES
+
+        satirlar = result.splitlines()
+        for satir in satirlar[:limit]:
+            self.io.tool_output(f"    {satir}")
+
+        kalan = len(satirlar) - limit
+        if kalan > 0:
+            self.io.tool_output(f"    ... {kalan} satır daha")
 
     def _show_tool_call(self, name, args):
         """Araç çağrısını kullanıcıya tek satırda özetle."""
