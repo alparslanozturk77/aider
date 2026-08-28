@@ -168,8 +168,17 @@ Yeni beceri: `/skills new <ad>` — iskeleti `aider-skills/` altına yazar.
 Girdi satırının altında mevcut izin modunu, `shift+tab`'ın hangi moda geçeceğini
 ve yüklü beceri/not sayısını gösteren bir çubuk var.
 
-`shift+tab` modlar arasında dolaşır: plan → onay → oto → plan. Sıradaki mod
-çubukta yazdığı için kullanıcı basmadan önce ne olacağını bilir.
+```
+ ⏸ plan modu açık  (shift+tab ile değiştir)   ? kısayollar   /help komutlar
+ ⏵ onay modu açık  (shift+tab ile değiştir)   ? kısayollar   /help komutlar
+ ⏵⏵ oto mod açık   (shift+tab ile değiştir)   ? kısayollar   /help komutlar
+```
+
+`shift+tab` modlar arasında dolaşır: plan → onay → oto → plan. Chevron sayısı
+serbestlik derecesini anlatıyor.
+
+Boş satırda `?` komut listesini basar (`/help` argümansız, model çağırmaz).
+Filtre boş satırla sınırlı, yani metin içinde soru işareti yazmak etkilenmiyor.
 
 Upstream'e dokunuş `io.py`'de üç nokta: `agent_status` ve `agent_cycle_mode`
 kancaları, ve `prompt()` çağrısına `bottom_toolbar`. İkisi de diğer coder'larda

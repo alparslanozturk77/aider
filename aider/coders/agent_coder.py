@@ -108,10 +108,13 @@ class AgentCoder(Coder):
     # shift+tab bu sırayla dolaşır.
     MODE_CYCLE = (MODE_PLAN, MODE_ASK, MODE_AUTO)
 
+    # (işaret, ad, renk) — Claude Code'un durum satırına yakın kalsın diye
+    # chevron sayısı serbestlik derecesini anlatıyor: plan durakta, onay tek
+    # adım, oto serbest.
     MODE_LABELS = {
-        MODE_PLAN: ("plan", "salt-okunur, dosyaya dokunmaz"),
-        MODE_ASK: ("onay", "her değişiklikte sorar"),
-        MODE_AUTO: ("oto", "reddedilmedikçe sormaz"),
+        MODE_PLAN: ("⏸", "plan modu", "ansiblue"),
+        MODE_ASK: ("⏵", "onay modu", "ansigreen"),
+        MODE_AUTO: ("⏵⏵", "oto mod", "ansiyellow"),
     }
 
     def current_mode(self):
@@ -128,34 +131,15 @@ class AgentCoder(Coder):
         """Girdi satırının altında görünen tek satır."""
         from prompt_toolkit.formatted_text import FormattedText
 
-        mode = self.current_mode()
-        ad, aciklama = self.MODE_LABELS[mode]
+        isaret, ad, renk = self.MODE_LABELS[self.current_mode()]
 
-        # Sıradaki modu göstermek shift+tab'ın ne yapacağını tahmin edilebilir
-        # kılıyor; kullanıcı denemeden biliyor.
-        sonraki = self.MODE_CYCLE[(self.MODE_CYCLE.index(mode) + 1) % len(self.MODE_CYCLE)]
-        sonraki_ad = self.MODE_LABELS[sonraki][0]
-
-        renk = {
-            MODE_PLAN: "ansiblue",
-            MODE_ASK: "ansigreen",
-            MODE_AUTO: "ansiyellow",
-        }[mode]
-
-        parts = [
-            (f"bold {renk}", f" {ad} "),
-            ("", f"— {aciklama}"),
-            ("ansibrightblack", f"   shift+tab → {sonraki_ad}"),
-            ("ansibrightblack", "   /help komutlar"),
-        ]
-
-        n = len(self.ctx.skills.skills)
-        if n:
-            parts.append(("ansibrightblack", f"   {n} beceri"))
-        if self.ctx.memory.notes:
-            parts.append(("ansibrightblack", f"   {len(self.ctx.memory.notes)} not"))
-
-        return FormattedText(parts)
+        return FormattedText(
+            [
+                (f"bold {renk}", f" {isaret} {ad} açık"),
+                ("ansibrightblack", "  (shift+tab ile değiştir)"),
+                ("ansibrightblack", "   ? kısayollar   /help komutlar"),
+            ]
+        )
 
     def cycle_mode(self):
         """shift+tab: plan → onay → oto → plan."""

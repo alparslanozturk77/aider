@@ -12,6 +12,7 @@ from datetime import datetime
 from io import StringIO
 from pathlib import Path
 
+from prompt_toolkit.application import get_app
 from prompt_toolkit.completion import Completer, Completion, ThreadedCompleter
 from prompt_toolkit.cursor_shapes import ModalCursorShapeConfig
 from prompt_toolkit.enums import EditingMode
@@ -590,6 +591,17 @@ class InputOutput:
             if self.agent_cycle_mode:
                 self.agent_cycle_mode()
                 event.app.invalidate()
+
+        @kb.add("?", filter=Condition(lambda: not get_app().current_buffer.text))
+        def _(event):
+            """Bos satirda '?': komut listesini goster.
+
+            Filtre bos satirla sinirli, yani metin icinde soru isareti yazmak
+            etkilenmiyor. /help argumansiz calisinca model cagirmadan komut
+            listesini basiyor.
+            """
+            event.current_buffer.text = "/help"
+            event.current_buffer.validate_and_handle()
 
         @kb.add("c-space")
         def _(event):

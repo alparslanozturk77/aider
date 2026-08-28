@@ -1579,20 +1579,22 @@ class TestStatusBarAndModeCycle(unittest.TestCase):
         # Döngü başladığı yere dönmeli.
         self.assertEqual(self.coder.current_mode(), gorulen[0])
 
-    def test_status_names_the_next_mode(self):
-        # shift+tab'ın ne yapacağı basmadan önce görünmeli.
-        for _ in range(len(self.coder.MODE_CYCLE)):
-            mode = self.coder.current_mode()
-            idx = self.coder.MODE_CYCLE.index(mode)
-            sonraki = self.coder.MODE_CYCLE[(idx + 1) % len(self.coder.MODE_CYCLE)]
-            self.assertIn(self.coder.MODE_LABELS[sonraki][0], self._plain())
-            self.coder.cycle_mode()
+    def test_status_tells_how_to_change_mode(self):
+        # Kullanıcı kısayolu keşfedebilmeli.
+        self.assertIn("shift+tab", self._plain())
 
-    def test_status_shows_current_mode_label(self):
-        while self.coder.current_mode() != "plan":
-            self.coder.cycle_mode()
-        self.assertIn("plan", self._plain())
-        self.assertIn("salt-okunur", self._plain())
+    def test_status_shows_marker_and_name_of_current_mode(self):
+        for mode in self.coder.MODE_CYCLE:
+            while self.coder.current_mode() != mode:
+                self.coder.cycle_mode()
+            isaret, ad, _renk = self.coder.MODE_LABELS[mode]
+            duz = self._plain()
+            self.assertIn(isaret, duz)
+            self.assertIn(ad, duz)
+
+    def test_each_mode_has_a_distinct_marker(self):
+        isaretler = [v[0] for v in self.coder.MODE_LABELS.values()]
+        self.assertEqual(len(isaretler), len(set(isaretler)))
 
     def test_cycling_to_plan_hides_mutating_tools(self):
         while self.coder.current_mode() != "plan":
