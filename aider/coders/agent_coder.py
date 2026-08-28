@@ -6,6 +6,7 @@ kurar: model araç çağırır, sonucu görür, tekrar karar verir; iş bitene k
 """
 
 import json
+import sys
 
 from aider.agent.plan import PLAN_MODE_REMINDER, ExitPlanModeTool
 from aider.agent.mcp import MCPManager
@@ -117,6 +118,9 @@ class AgentCoder(Coder):
         MODE_AUTO: ("⏵⏵", "oto mod", "ansiyellow"),
     }
 
+    # Terminal ya da font bu glyph'leri taşımıyorsa kullanılacak karşılıklar.
+    ASCII_MARKERS = {MODE_PLAN: "||", MODE_ASK: ">", MODE_AUTO: ">>"}
+
     def current_mode(self):
         if self.ctx.plan_mode:
             return MODE_PLAN
@@ -128,18 +132,23 @@ class AgentCoder(Coder):
         self.io.agent_cycle_mode = self.cycle_mode
 
     def _status_text(self):
-        """Girdi satırının altında görünen tek satır."""
-        from prompt_toolkit.formatted_text import FormattedText
+        """Prompt önekine eklenen kısa mod göstergesi.
 
-        isaret, ad, renk = self.MODE_LABELS[self.current_mode()]
+        Düz metin döner, biçimli metin değil: prompt öneki aider'in kendi
+        stiliyle çiziliyor ve araya renk kodu sokmak satırı bozuyor.
+        """
+        mode = self.current_mode()
+        isaret, ad, _renk = self.MODE_LABELS[mode]
+        return f"{self._marker(mode, isaret)} {ad}"
 
-        return FormattedText(
-            [
-                (f"bold {renk}", f" {isaret} {ad} açık"),
-                ("ansibrightblack", "  (shift+tab ile değiştir)"),
-                ("ansibrightblack", "   ? kısayollar   /help komutlar"),
-            ]
-        )
+    def _marker(self, mode, isaret):
+        """Glyph terminalin kodlamasında yoksa ASCII karşılığına düş."""
+        enc = getattr(sys.stdout, "encoding", None) or "utf-8"
+        try:
+            isaret.encode(enc)
+        except (UnicodeEncodeError, LookupError):
+            return self.ASCII_MARKERS[mode]
+        return isaret
 
     def cycle_mode(self):
         """shift+tab: plan → onay → oto → plan."""
@@ -151,6 +160,20 @@ class AgentCoder(Coder):
         if self.ctx.permissions and yeni != MODE_PLAN:
             self.ctx.permissions.mode = yeni
         return yeni
+
+    def mode_help(self):
+        """Üç modun tek satırlık açıklaması; /mod komutu bunu basar."""
+        satirlar = []
+        for m in self.MODE_CYCLE:
+            isaret, ad, _ = self.MODE_LABELS[m]
+            aciklama = {
+                MODE_PLAN: "salt-okunur — Write, Edit, Bash modele sunulmaz",
+                MODE_ASK: "her yan etkili araçta onay sorar",
+                MODE_AUTO: "reddedilmedikçe sormaz (yerleşik güvenlik listesi yine geçerli)",
+            }[m]
+            imza = "→ " if m == self.current_mode() else "  "
+            satirlar.append(f"  {imza}{isaret} {ad:10} {aciklama}")
+        return "\n".join(satirlar)
 
     def rebuild_registry(self):
         """MCP sunucuları yeniden başlatıldıktan sonra araç listesini tazele."""

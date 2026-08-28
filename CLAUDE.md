@@ -163,25 +163,27 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 
 Yeni beceri: `/skills new <ad>` — iskeleti `aider-skills/` altına yazar.
 
-## Durum çubuğu
+## Mod göstergesi
 
-Girdi satırının altında mevcut izin modunu, `shift+tab`'ın hangi moda geçeceğini
-ve yüklü beceri/not sayısını gösteren bir çubuk var.
+Mevcut izin modu prompt'un içinde durur:
 
 ```
- ⏸ plan modu açık  (shift+tab ile değiştir)   ? kısayollar   /help komutlar
- ⏵ onay modu açık  (shift+tab ile değiştir)   ? kısayollar   /help komutlar
- ⏵⏵ oto mod açık   (shift+tab ile değiştir)   ? kısayollar   /help komutlar
+agent ⏸ plan modu>
+agent ⏵ onay modu>
+agent ⏵⏵ oto mod>
 ```
 
-`shift+tab` modlar arasında dolaşır: plan → onay → oto → plan. Chevron sayısı
-serbestlik derecesini anlatıyor.
+`shift+tab` modlar arasında dolaşır, `/mod` üçünü açıklamasıyla listeler,
+`/mod oto` doğrudan geçer. Glyph terminalin kodlamasında yoksa ASCII'ye
+düşülür (`||`, `>`, `>>`).
 
-Boş satırda `?` komut listesini basar (`/help` argümansız, model çağırmaz).
-Filtre boş satırla sınırlı, yani metin içinde soru işareti yazmak etkilenmiyor.
+**Alt bilgi çubuğu (`bottom_toolbar`) denendi ve geri alındı.** Terminali raw
+modda bırakıp merdiven etkisi yapıyordu — her satır bir öncekinin bittiği
+sütundan başlıyordu. Prompt öneki aider'in zaten doğru çizdiği tek yer;
+oraya yazmak hem sağlam hem her zaman görünür.
 
-Upstream'e dokunuş `io.py`'de üç nokta: `agent_status` ve `agent_cycle_mode`
-kancaları, ve `prompt()` çağrısına `bottom_toolbar`. İkisi de diğer coder'larda
+Upstream'e dokunuş `io.py`'de iki nokta: `agent_status` / `agent_cycle_mode`
+kancaları ve prompt önekine eklenen tek satır. İkisi de diğer coder'larda
 `None` kalır.
 
 ## Bellek ve proje talimatları

@@ -1332,6 +1332,39 @@ Sonucun kullanıcıya nasıl sunulacağını tarif et.
         for err in coder.mcp.errors:
             self.io.tool_error(f"başlatılamadı — {err}")
 
+    def cmd_mod(self, args):
+        """Show or change the agent permission mode: /mod [plan|onay|oto]"""  # noqa
+        coder = self._require_agent()
+        if not coder:
+            return
+
+        istek = args.strip().lower()
+        if not istek:
+            self.io.tool_output(coder.mode_help())
+            self.io.tool_output("\nDeğiştirmek için: /mod plan | /mod onay | /mod oto")
+            self.io.tool_output("Kısayol: shift+tab")
+            return
+
+        # Türkçe etiketten iç mod adına çevir.
+        eslesme = {}
+        for m in coder.MODE_CYCLE:
+            _isaret, ad, _renk = coder.MODE_LABELS[m]
+            eslesme[ad.split()[0]] = m   # "plan modu" -> "plan"
+            eslesme[m] = m               # ic adlar da kabul edilsin
+
+        if istek not in eslesme:
+            self.io.tool_error(
+                f"Bilinmeyen mod: {istek}. Geçerli: {', '.join(sorted(set(eslesme)))}"
+            )
+            return
+
+        hedef = eslesme[istek]
+        while coder.current_mode() != hedef:
+            coder.cycle_mode()
+
+        isaret, ad, _ = coder.MODE_LABELS[hedef]
+        self.io.tool_output(f"{isaret} {ad} açık")
+
     def cmd_hatirla(self, args):
         """Save a persistent note: /hatirla [tur] <başlık> :: <not>"""  # noqa
         from aider.agent.memory import TYPES

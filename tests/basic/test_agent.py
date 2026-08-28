@@ -1551,7 +1551,7 @@ class TestStatusBarAndModeCycle(unittest.TestCase):
         )
 
     def _plain(self):
-        return "".join(t for _, t in self.coder._status_text())
+        return self.coder._status_text()
 
     def test_hooks_are_installed_on_io(self):
         # Bunlar olmadan çubuk çizilmez ve shift+tab çalışmaz.
@@ -1579,9 +1579,19 @@ class TestStatusBarAndModeCycle(unittest.TestCase):
         # Döngü başladığı yere dönmeli.
         self.assertEqual(self.coder.current_mode(), gorulen[0])
 
-    def test_status_tells_how_to_change_mode(self):
-        # Kullanıcı kısayolu keşfedebilmeli.
-        self.assertIn("shift+tab", self._plain())
+    def test_status_is_short_enough_for_a_prompt(self):
+        # Prompt önekine giriyor; uzun olursa satırı boğar.
+        for mode in self.coder.MODE_CYCLE:
+            while self.coder.current_mode() != mode:
+                self.coder.cycle_mode()
+            self.assertLessEqual(len(self._plain()), 20, self._plain())
+
+    def test_mode_help_lists_every_mode_and_marks_current(self):
+        # shift+tab çalışmayan terminaller için /mod çıktısı yol gösterici olmalı.
+        yardim = self.coder.mode_help()
+        for mode in self.coder.MODE_CYCLE:
+            self.assertIn(self.coder.MODE_LABELS[mode][1], yardim)
+        self.assertIn("→", yardim)
 
     def test_status_shows_marker_and_name_of_current_mode(self):
         for mode in self.coder.MODE_CYCLE:
@@ -1634,11 +1644,21 @@ class TestStatusBarAndModeCycle(unittest.TestCase):
         self.coder = self._coder(plan_mode=True)
         self.assertEqual(self.coder.current_mode(), "plan")
 
-    def test_status_text_is_renderable_formatted_text(self):
-        from prompt_toolkit.formatted_text import FormattedText
+    def test_status_text_is_plain_string(self):
+        # Prompt öneki aider'in kendi stiliyle çiziliyor; araya renk kodu
+        # sokmak satırı bozuyor.
+        self.assertIsInstance(self.coder._status_text(), str)
 
-        ft = self.coder._status_text()
-        self.assertIsInstance(ft, FormattedText)
-        for style, text in ft:
-            self.assertIsInstance(style, str)
-            self.assertIsInstance(text, str)
+    def test_marker_falls_back_to_ascii_on_limited_encoding(self):
+        mode = self.coder.current_mode()
+        isaret = self.coder.MODE_LABELS[mode][0]
+        with patch("sys.stdout") as sahte:
+            sahte.encoding = "ascii"
+            self.assertEqual(self.coder._marker(mode, isaret), self.coder.ASCII_MARKERS[mode])
+
+    def test_marker_uses_glyph_when_encoding_allows(self):
+        mode = self.coder.current_mode()
+        isaret = self.coder.MODE_LABELS[mode][0]
+        with patch("sys.stdout") as sahte:
+            sahte.encoding = "utf-8"
+            self.assertEqual(self.coder._marker(mode, isaret), isaret)

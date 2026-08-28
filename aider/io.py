@@ -12,7 +12,6 @@ from datetime import datetime
 from io import StringIO
 from pathlib import Path
 
-from prompt_toolkit.application import get_app
 from prompt_toolkit.completion import Completer, Completion, ThreadedCompleter
 from prompt_toolkit.cursor_shapes import ModalCursorShapeConfig
 from prompt_toolkit.enums import EditingMode
@@ -551,6 +550,15 @@ class InputOutput:
         prompt_prefix = ""
         if edit_format:
             prompt_prefix += edit_format
+        # Agent modunda mevcut izin modu prompt'un icinde durur. Alt bilgi
+        # cubugu (bottom_toolbar) denendi ve terminali raw modda birakip
+        # merdiven etkisi yaptigi icin geri alindi; prompt oneki aider'in
+        # zaten dogru cizdigi tek yer.
+        if self.agent_status:
+            try:
+                prompt_prefix += " " + self.agent_status()
+            except Exception:
+                pass
         if self.multiline_mode:
             prompt_prefix += (" " if edit_format else "") + "multi"
         prompt_prefix += "> "
@@ -591,17 +599,6 @@ class InputOutput:
             if self.agent_cycle_mode:
                 self.agent_cycle_mode()
                 event.app.invalidate()
-
-        @kb.add("?", filter=Condition(lambda: not get_app().current_buffer.text))
-        def _(event):
-            """Bos satirda '?': komut listesini goster.
-
-            Filtre bos satirla sinirli, yani metin icinde soru isareti yazmak
-            etkilenmiyor. /help argumansiz calisinca model cagirmadan komut
-            listesini basiyor.
-            """
-            event.current_buffer.text = "/help"
-            event.current_buffer.validate_and_handle()
 
         @kb.add("c-space")
         def _(event):
@@ -687,7 +684,6 @@ class InputOutput:
                         key_bindings=kb,
                         complete_while_typing=True,
                         prompt_continuation=get_continuation,
-                        bottom_toolbar=self.agent_status,
                     )
                 else:
                     line = input(show)
