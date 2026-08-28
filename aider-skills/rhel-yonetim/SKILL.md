@@ -42,6 +42,24 @@ ssh -o ConnectTimeout=5 -o BatchMode=yes <sunucu> 'df -h'
 yerine hemen hata verir. Agent'ın terminali olmadığı için parola istemi
 zaten cevaplanamaz.
 
+### Sunucu adını UYDURMA
+
+Kullanıcı `skyup` diyorsa komut `ssh skyup` olur. Başına `user@`, sonuna
+`.kurum.local` gibi bir alan adı **EKLEME**. Bu adlar genelde
+`~/.ssh/config` içinde tanımlı takma adlardır ve kullanıcı, anahtarı ve
+gerçek adresi orada bir kez ayarlamıştır.
+
+Adın çözülüp çözülmediğinden emin değilsen bağlanmayı denemeden önce bak:
+
+```bash
+ssh -G <ad> | head -3          # hostname, user, port
+grep -iE "^Host " ~/.ssh/config
+```
+
+Takma ad tanımlı değilse kullanıcıya sor. Tahmin edilen bir adrese bağlanmayı
+denemek en iyi ihtimalle zaman aşımı, en kötü ihtimalle yanlış sunucuya
+bağlanmaktır.
+
 Adres çözülmüyorsa önce onu söyle, bağlanmayı deneme:
 
 ```bash
