@@ -1920,12 +1920,29 @@ class TestEmptyModelReply(unittest.TestCase):
         coder.main_model.send_completion = sahte
         return coder
 
-    def test_empty_reply_warns_the_user(self):
+    def test_empty_reply_with_no_tools_warns_clearly(self):
         coder = self._coder([FakeMessage(content="")])
         with patch.object(self.io, "tool_warning") as uyari:
             list(coder.send_message("bir şey yap"))
         self.assertTrue(uyari.called)
-        self.assertIn("boş yanıt", uyari.call_args[0][0])
+        self.assertIn("hiç araç çağırmadı", uyari.call_args[0][0])
+
+    def test_empty_reply_after_tool_use_says_it_was_not_summarised(self):
+        # Araç çalıştıysa "hiçbir şey yapmadı" demek yanlış olur; iş yapıldı,
+        # yalnızca özetlenmedi.
+        coder = self._coder(
+            [
+                FakeMessage(
+                    tool_calls=[FakeToolCall("c1", "Glob", json.dumps({"pattern": "*"}))]
+                ),
+                FakeMessage(content=""),
+            ]
+        )
+        with patch.object(self.io, "tool_warning") as uyari:
+            list(coder.send_message("dosyaları listele"))
+        mesajlar = [c.args[0] for c in uyari.call_args_list if c.args]
+        self.assertTrue(any("özetlemedi" in m for m in mesajlar), mesajlar)
+        self.assertFalse(any("hiç araç çağırmadı" in m for m in mesajlar), mesajlar)
 
     def test_whitespace_only_reply_also_warns(self):
         coder = self._coder([FakeMessage(content="   \n  ")])

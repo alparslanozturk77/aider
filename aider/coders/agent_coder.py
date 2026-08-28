@@ -284,6 +284,9 @@ class AgentCoder(Coder):
         # eklenir; kalıcı geçmişe (cur_messages) tur bitiminde yazılır.
         working = list(messages)
         turn_messages = []
+        # Bu mesaj boyunca hiç araç çalıştı mı? Uyarı metnini buna göre
+        # seçiyoruz: araç çalıştıysa "hiçbir şey yapmadı" demek yanlış olur.
+        arac_calisti = False
         litellm_ex = LiteLLMExceptions()
 
         for iteration in range(self.max_iterations):
@@ -322,15 +325,22 @@ class AgentCoder(Coder):
             turn_messages.append(assistant_msg)
 
             if not tool_calls:
-                # Model ne araç çağırdı ne de bir şey söyledi. Sessiz kalmak
-                # kullanıcıya "bir şey oldu ama göremiyorum" hissi veriyor;
-                # zayıf modellerde bu sık oluyor.
+                # Sessiz bitiş kullanıcıya "bir şey oldu ama göremiyorum"
+                # hissi veriyor. Ama araç çalıştıysa "hiçbir şey yapmadı"
+                # demek yanlış olur — iş yapıldı, yalnızca özetlenmedi.
                 if not (content or "").strip():
-                    self.io.tool_warning(
-                        "Model boş yanıt verdi — araç da çağırmadı. İsteği daha kısa ve "
-                        "tek adımlı yazmayı dene."
-                    )
+                    if arac_calisti:
+                        self.io.tool_warning(
+                            "Model sonucu özetlemedi. Araç çıktısı yukarıda."
+                        )
+                    else:
+                        self.io.tool_warning(
+                            "Model boş yanıt verdi ve hiç araç çağırmadı. İsteği daha "
+                            "kısa ve tek adımlı yazmayı dene."
+                        )
                 break
+
+            arac_calisti = True
 
             for call in tool_calls:
                 result = self._run_tool_call(call)
