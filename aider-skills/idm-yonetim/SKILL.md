@@ -16,7 +16,8 @@ timedatectl                          # NTP senkron OLMALI
 
 **Saat kritiktir.** Kerberos varsayılan olarak 5 dakikadan fazla saat farkını
 reddeder; bilet alınamaz ve hata mesajı bunu açıkça söylemez. Senkron değilse
-önce `chronyc sources` ile düzelt (bkz. `filo-durum-kontrolu`).
+önce `chronyc sources` ile düzelt; filoda topluca bakmak için
+`filo-durum-kontrolu` becerisini kullan.
 
 DNS keşfi için IdM sunucusunun SRV kayıtları çözülmeli:
 

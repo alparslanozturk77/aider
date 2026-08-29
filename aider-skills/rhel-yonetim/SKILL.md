@@ -156,6 +156,6 @@ Burada `hammer` ve `ipa` için **komut referansı yok** — bilinçli olarak.
 Sürüme bağlı oldukları için ezberden yazılmış bir referans yanlış bilgi
 kaynağı olur.
 
-Kendi ortamına özgü referansı oluşturmak için `beceri-yaz` becerisini kullan:
-gerçek sunucuda `--help` çıktısından üretir, çalıştırarak doğrular ve sürüm
-notu düşer.
+Kendi ortamına özgü referansı oluşturmak için `beceri-gelistir` becerisini
+kullan: gerçek sunucuda `--help` çıktısından üretir, çalıştırarak doğrular ve
+sürüm notu düşer.

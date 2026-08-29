@@ -468,6 +468,23 @@ def _check_skill_discovery():
         if not skill.description:
             raise Fail(f"'{skill.name}' becerisinin description'ı yok — model onu tetikleyemez")
 
+    # Beceriler birbirine "`ad` becerisine geç" diye yönlendiriyor. Hedef
+    # yoksa model boşluğa gönderilir ve bu sessizce olur; bir beceriyi
+    # yeniden adlandırmak ya da bölmek bu bağı kolayca koparıyor.
+    import re
+
+    adlar = set(lib.skills)
+    kirik = set()
+    for yol in sorted((REPO / SHARED_SKILLS_DIR).glob("*/SKILL.md")):
+        metin = yol.read_text(encoding="utf-8")
+        # Kanonik biçim: "`ad` becerisi/becerisine/becerisini". Yalnızca bunu
+        # arıyoruz; serbest metinde geçen komut adları yanlış alarm veriyor.
+        for m in re.finditer(r"`([a-z0-9-]+)` becerisi", metin):
+            if m.group(1) not in adlar:
+                kirik.add(f"{yol.parent.name} -> {m.group(1)}")
+    if kirik:
+        raise Fail("var olmayan beceriye yönlendirme: " + ", ".join(sorted(kirik)))
+
 
 @check(
     "README fork'un",
