@@ -88,7 +88,7 @@ yakalar.
 
 ---
 
-## Yedi dokunuş noktası
+## Sekiz dokunuş noktası
 
 Çakışma yüzeyi bilinçli olarak bu yedi noktayla sınırlı. Bir merge birini
 silerse aşağıdan elle geri koyabilirsin.
@@ -228,6 +228,22 @@ Bu yüzden depoya girmesi gereken hiçbir şey `.aider` ile başlayan dizinde
 durmuyor: şablonlar `ornek/`, beceriler `aider-skills/`.
 
 ---
+
+## README çakışması
+
+`README.md` upstream'de sık değişir ve fork onu tamamen değiştirdi; upstream'in
+kendi metni `ORIJINAL-README.md`'de duruyor. Merge'de neredeyse her seferinde
+çakışır ve çözümü **her zaman aynı**:
+
+```bash
+git checkout --ours README.md          # fork'un ön yüzü kalsın
+git show MERGE_HEAD:README.md > ORIJINAL-README.md   # upstream'inki güncellensin
+git add README.md ORIJINAL-README.md
+```
+
+`scripts/fork_dogrula.py` içindeki "README fork'un" kontrolü bu adımın
+atlandığını yakalar: merge upstream README'sini geri getirdiyse GitHub'da
+fork'un değil aider'ın kendi sayfası görünür.
 
 ## Değişmez bozulursa
 

@@ -445,6 +445,26 @@ def _check_skill_discovery():
             raise Fail(f"'{skill.name}' becerisinin description'ı yok — model onu tetikleyemez")
 
 
+@check(
+    "README fork'un",
+    "README.md",
+    "Depo ön yüzü fork'u anlatmalı. Merge upstream README'sini geri getirirse "
+    "GitHub'da aider'ın kendi sayfası görünür ve fork'un ne olduğu kaybolur.",
+)
+def _check_readme():
+    readme = REPO / "README.md"
+    if not readme.is_file():
+        raise Fail("README.md yok")
+    metin = readme.read_text(encoding="utf-8")
+    if "aider-agent" not in metin.splitlines()[0]:
+        raise Fail(
+            "README.md fork'un değil — ilk satırda 'aider-agent' yok. "
+            "Merge upstream sürümünü geri getirmiş olabilir."
+        )
+    if not (REPO / "ORIJINAL-README.md").is_file():
+        raise Fail("ORIJINAL-README.md yok — upstream README'si korunmalı")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Fork değişmezlerini doğrula")
     ap.add_argument("--liste", action="store_true", help="kontrolleri listele ve çık")

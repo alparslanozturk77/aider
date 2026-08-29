@@ -40,7 +40,7 @@ aider/coders/
   agent_prompts.py   Sistem promptu
 ```
 
-### Upstream'e dokunulan yedi nokta
+### Upstream'e dokunulan sekiz nokta
 
 Çakışma yüzeyi bilinçli olarak buraya sınırlandı. Bir upstream dosyasını
 değiştirmek zorunda kalırsan yamayı en küçük blokta tut ve nedenini yorumda yaz.
@@ -54,6 +54,7 @@ değiştirmek zorunda kalırsan yamayı en küçük blokta tut ve nedenini yorum
 | `aider/io.py` | Mod göstergesi kancaları ve `shift+tab` |
 | `aider/commands.py` | On bir slash komutu |
 | `.gitignore` | `.env` ve `.mcp.json` ignore |
+| `README.md` | Fork'un kendi ön yüzü; upstream'inki `ORIJINAL-README.md` |
 
 En kritik olanı `models.py`: upstream `tool_choice`'u **tek bir fonksiyona
 zorluyordu**, bu da agentic döngüyü imkânsız kılıyor.
@@ -125,7 +126,7 @@ Onsuz komut, izlenen dosyalar için desen eşleşse bile "ignore edilmiyor" der.
 .venv/bin/python scripts/fork_dogrula.py
 ```
 
-Bu betik fork'un yedi dokunuş noktasının hâlâ **çalıştığını** doğrular — dosyada
+Bu betik fork'un sekiz dokunuş noktasının hâlâ **çalıştığını** doğrular — dosyada
 metin aramaz, kodu gerçekten çağırır. Bir merge yaman satırları koruyup
 davranışı bozabilir; metin araması bunu kaçırır.
 
