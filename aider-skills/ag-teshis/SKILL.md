@@ -1,6 +1,6 @@
 ---
 name: ag-teshis
-description: Ağ, güvenlik duvarı ve SELinux sorunlarını incelerken kullan. "bağlanamıyor", "port", "firewall", "selinux", "erişim yok", "timeout", "connection refused", "DNS" isteklerinde tetiklenir.
+description: Ağ ve güvenlik duvarı sorunlarını incelerken kullan — dinleme, port, firewalld, DNS, yönlendirme. "bağlanamıyor", "port", "firewall", "erişim yok", "timeout", "connection refused", "DNS" isteklerinde tetiklenir. SELinux engeli için `selinux`, TLS için `sertifika-tls`.
 ---
 
 "Servis çalışıyor ama bağlanamıyorum" vakalarının RHEL'deki sessiz suçlusu
@@ -58,43 +58,31 @@ görünürken trafiği bulut katmanı kesiyor olabilir.
 ## 4. SELinux — en sık atlanan katman
 
 ```bash
-getenforce                          # Enforcing / Permissive / Disabled
-ausearch -m avc -ts recent          # son engellemeler
-grep -i denied /var/log/audit/audit.log | tail -20
+sestatus | grep -i "current mode"
+ausearch -m avc -ts recent
 ```
 
-`Enforcing` ve `avc denied` satırı varsa suçlu bulundu.
+`Enforcing` ve `avc denied` satırı varsa suçlu bulundu — düzeltme için
+`selinux` becerisine geç (boolean, port etiketi, dosya bağlamı).
 
-Sık karşılaşılanlar:
-
-| Belirti | Boolean |
-|---|---|
-| nginx/httpd upstream'e bağlanamıyor | `httpd_can_network_connect` |
-| httpd veritabanına bağlanamıyor | `httpd_can_network_connect_db` |
-| Servis standart dışı portta dinleyemiyor | `semanage port -a` gerekir |
-| NFS üzerinden dosya okunamıyor | `httpd_use_nfs` |
-
-```bash
-getsebool -a | grep httpd            # mevcut durum
-setsebool -P httpd_can_network_connect on    # yan etkili, ONAY AL
-semanage port -a -t http_port_t -p tcp 8080  # yan etkili
-```
-
-**`setenforce 0` yapıp bırakma.** Teşhis için geçici olarak denenebilir ama
-çözüm değildir; sorunu doğruladıktan sonra geri al ve doğru boolean'ı ayarla.
-Kalıcı olarak SELinux kapatmak güvenlik duruşunu düşürür.
+`Permissive` ise SELinux engellemiyor; sorun başka katmanda, aramaya devam et.
 
 ## 5. İsim çözümleme ve yönlendirme
 
 ```bash
 getent hosts <ad>                   # /etc/hosts + DNS birlikte
 dig +short <ad>
-resolvectl status | head -20
+cat /etc/resolv.conf                # hangi sunucuya soruluyor
 ip route get <hedef-ip>
-tracepath -n <hedef>              # traceroute minimal kurulumda yok
+tracepath -n <hedef>                # traceroute minimal kurulumda yok
 ```
 
 `getent` çözüyor ama `dig` çözmüyorsa kayıt `/etc/hosts` içindedir.
+
+`resolvectl status` **her makinede çalışmaz** — ölçüldü, systemd-resolved
+etkin olmayan bir RHEL 10'da `Failed to get global data ... unknown unit`
+veriyor. Önce `systemctl is-active systemd-resolved`, değilse
+`/etc/resolv.conf`'a bak.
 
 ## 6. Uzak uçtan bakış
 
@@ -107,6 +95,11 @@ done
 ```
 
 `-w` şart: zaman aşımı vermezsen kapalı portta uzun süre bekler.
+
+**`nc` çıktısını değil çıkış kodunu oku.** Ölçüldü: açık portta
+`Ncat: 0 bytes sent, 0 bytes received` yazıyor — "açık" kelimesi geçmiyor.
+Kapalıda `Ncat: Connection refused`. Güvenilir sinyal `$?`, bu yüzden
+yukarıdaki `&& echo açık || echo KAPALI` kalıbı doğru olan.
 
 **Güvenlik duvarı izni doğrularken yönü karıştırma.** Portun *hedefte* açık
 olması yetmez; senin çıkışın da açık olmalı. İki taraftan da dene:
@@ -122,10 +115,13 @@ ss -tlnp | grep <port>
 
 ```bash
 timeout 5 bash -c "</dev/tcp/<sunucu>/<port>" && echo açık || echo kapalı
-curl -sS -m 5 telnet://<sunucu>:<port> </dev/null
 ```
 
-Birincisi bash'in kendi özelliği, ek paket gerektirmez.
+Bash'in kendi özelliği, ek paket gerektirmez; açık ve kapalı portta doğru
+sonuç verdiği ölçüldü.
+
+**`curl telnet://` kullanma.** TLS dinleyen açık bir portta `curl: (28)
+Time-out` veriyor — port açık olduğu hâlde kapalı sanırsın. Ölçüldü.
 
 Hata mesajını ayırt et:
 
@@ -135,6 +131,9 @@ Hata mesajını ayırt et:
 - **Name or service not known** → DNS
 
 Bu üç mesaj sorunu üç farklı katmana işaret eder; karıştırma.
+
+TCP bağlantısı kurulup **TLS el sıkışmasında** takılıyorsa katman ağ değil
+sertifikadır — `sertifika-tls` becerisine geç.
 
 ## Raporlama
 

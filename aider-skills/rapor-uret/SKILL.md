@@ -1,29 +1,35 @@
 ---
 name: rapor-uret
-description: Toplanan veriyi dosyaya döken bir rapor istendiğinde kullan — CSV, Excel (xlsx), PDF ya da HTML. "csv çıkar", "excel", "xlsx", "pdf", "rapor", "tabloya dök", "dosyaya yaz" isteklerinde tetiklenir.
+description: Toplanan veriyi dosyaya döken bir rapor istendiğinde kullan — biçim seçimi, CSV ve HTML üretimi. "csv çıkar", "rapor", "tabloya dök", "dosyaya yaz", "html rapor" isteklerinde tetiklenir. Excel (xlsx) ve PDF için `rapor-excel-pdf`.
 ---
+
+Doğrulandı: AlmaLinux 10.2 (python 3.12) ve macOS — 2026-08-29
 
 ## Biçimi seçerken
 
 | Biçim | Bağımlılık | Ne zaman |
 |---|---|---|
 | **CSV** | yok (stdlib `csv`) | Varsayılan. Excel açar, script işler, her yerde çalışır. |
-| **XLSX** | `openpyxl` | Birden çok sayfa, biçimlendirme, dondurulmuş başlık gerekiyorsa |
-| **PDF** | `fpdf2` | Paylaşılacak, değiştirilmemesi gereken rapor |
-| **HTML** | yok | Hızlı ve zengin; tarayıcıdan PDF'e basılabilir |
+| **HTML** | yok | Zengin görünüm gerekiyorsa. Tarayıcıdan yazdır → PDF. |
+| **XLSX** | `openpyxl` | Çok sayfa, biçimlendirme, süzme gerekiyorsa |
+| **PDF** | kurulum gerektirir | Gerçekten PDF *dosyası* isteniyorsa |
 
-**Kullanıcı biçim belirtmediyse CSV üret.** Bağımlılık gerektirmez ve
-Excel'de doğrudan açılır.
+**Kullanıcı biçim belirtmediyse CSV üret.**
 
-Bağımlılık gerektiren bir biçim istendiğinde önce kurulu mu bak:
+**"PDF olsun" denince önce HTML öner.** Ölçüldü: minimal bir RHEL 10 sunucuda
+`pandoc`, `wkhtmltopdf`, `weasyprint`, `libreoffice`, `ps2pdf` **hiçbiri
+kurulu değil** ve hiçbir Python PDF kütüphanesi yok. HTML üretip tarayıcıdan
+yazdırmak çoğu ihtiyacı bağımlılıksız karşılar. Kullanıcı gerçekten dosya
+istiyorsa `rapor-excel-pdf` becerisine geç.
+
+Bağımlılık gerektiren bir biçim istendiğinde **önce kurulu mu bak**:
 
 ```bash
 python3 -c "import openpyxl; print(openpyxl.__version__)"
 ```
 
-Kurulu değilse ve ortam çevrimdışıysa **kendiliğinden pip install deneme** —
-başarısız olur. Kullanıcıya söyle ve CSV öner. Kurulum gerekiyorsa aşağıdaki
-çevrimdışı yordamı ver.
+Kurulu değilse ve ortam çevrimdışıysa kendiliğinden `pip install` deneme —
+başarısız olur. Kullanıcıya söyle, CSV ya da HTML öner.
 
 ## CSV
 
@@ -47,89 +53,22 @@ with open("ntp_durum.csv", "w", newline="", encoding="utf-8-sig") as f:
 Ayraç: Türkçe Excel kurulumları genelde `;` bekler. Kullanıcı Excel'de
 açacaksa `delimiter=";"` ver ya da sor.
 
-## Excel (xlsx)
-
-```python
-from openpyxl import Workbook
-from openpyxl.styles import Font
-from openpyxl.utils import get_column_letter
-
-wb = Workbook()
-ws = wb.active
-ws.title = "NTP Durum"
-
-basliklar = ["Sunucu", "Durum", "Sapma (ms)"]
-ws.append(basliklar)
-for h in ws[1]:
-    h.font = Font(bold=True)
-
-for s in satirlar:
-    ws.append([s["sunucu"], s["durum"], s["sapma_ms"]])
-
-ws.freeze_panes = "A2"                      # başlık sabit kalsın
-ws.auto_filter.ref = ws.dimensions          # süzme açık
-for i, _ in enumerate(basliklar, 1):        # sütun genişliği
-    ws.column_dimensions[get_column_letter(i)].width = 18
-
-wb.save("ntp_durum.xlsx")
-```
-
-Sorunlu satırları renklendirmek raporu okunur kılar:
-
-```python
-from openpyxl.styles import PatternFill
-kirmizi = PatternFill("solid", start_color="FFC7CE")
-for satir in ws.iter_rows(min_row=2):
-    if satir[1].value == "SORUN":
-        for h in satir:
-            h.fill = kirmizi
-```
-
-## PDF
-
-`fpdf2` en hafif seçenek ve saf Python.
-
-```python
-from fpdf import FPDF
-
-pdf = FPDF()
-pdf.add_page()
-# Türkçe karakter için Unicode font ŞART. Yerleşik fontlar latin-1'dir
-# ve 'ş', 'ğ', 'İ' karakterlerinde hata verir.
-pdf.add_font("dejavu", "", "/usr/share/fonts/dejavu/DejaVuSans.ttf")
-pdf.set_font("dejavu", size=14)
-pdf.cell(0, 10, "NTP Durum Raporu", new_x="LMARGIN", new_y="NEXT")
-
-pdf.set_font("dejavu", size=9)
-for s in satirlar:
-    pdf.cell(0, 6, f"{s['sunucu']:12} {s['durum']:10} {s['sapma_ms']} ms",
-             new_x="LMARGIN", new_y="NEXT")
-
-pdf.output("ntp_durum.pdf")
-```
-
-RHEL'de DejaVu fontu için: `dnf install dejavu-sans-fonts`. Font yoksa
-`fc-list | grep -i dejavu` ile başka bir Unicode font bul.
-
-**`weasyprint` kullanma.** Saf Python wheel'i var ama çalışma anında
-`pango`, `cairo`, `gdk-pixbuf` sistem kütüphanelerini arar; çevrimdışı
-minimal RHEL'de kurulumu zahmetlidir.
-
-## HTML — bağımlılıksız zengin rapor
-
-PDF bağımlılığı kurulamıyorsa en iyi alternatif. Tarayıcıdan yazdır → PDF.
+## HTML — bağımlılıksız ve yazdırılabilir
 
 ```python
 html = f"""<!doctype html><html><head><meta charset="utf-8">
+<title>NTP Durum Raporu</title>
 <style>
- body {{ font-family: sans-serif; }}
+ body {{ font-family: sans-serif; margin: 2rem; }}
  table {{ border-collapse: collapse; }}
  th, td {{ border: 1px solid #ccc; padding: 6px 10px; }}
- th {{ background: #eee; }}
+ th {{ background: #eee; text-align: left; }}
  .sorun {{ background: #fdd; }}
- @media print {{ .sorun {{ background: #fdd !important; -webkit-print-color-adjust: exact; }} }}
+ @media print {{ .sorun {{ background: #fdd !important;
+                           -webkit-print-color-adjust: exact; }} }}
 </style></head><body>
 <h1>NTP Durum Raporu</h1>
+<p>2026-08-29, <code>chronyc sources</code> çıktısından üretildi.</p>
 <table><tr><th>Sunucu</th><th>Durum</th><th>Sapma</th></tr>
 {"".join(
   f'<tr class="{"sorun" if s["durum"]=="SORUN" else ""}">'
@@ -139,25 +78,18 @@ html = f"""<!doctype html><html><head><meta charset="utf-8">
 open("ntp_durum.html", "w", encoding="utf-8").write(html)
 ```
 
-## Çevrimdışı kurulum
+`@media print` bloğu olmadan tarayıcı arka plan renklerini basmaz; sorunlu
+satırlar çıktıda kaybolur.
 
-İnternete çıkabilen bir makinede indir, kuruma taşı:
-
-```bash
-pip download -d wheels openpyxl fpdf2
-# hedef makinede:
-pip install --no-index --find-links wheels openpyxl fpdf2
-```
-
-Hepsi saf Python wheel olduğu için platform ve Python sürümü belirtmene gerek
-yok; derleme de gerekmez.
+Veri kullanıcıdan ya da komut çıktısından geliyorsa HTML'e gömmeden önce
+kaçır (`html.escape`), yoksa tablo bozulur.
 
 ## Her zaman
 
 - Dosyayı **nereye** yazdığını mutlak yolla söyle
 - Satır sayısını ve sorunlu kayıt sayısını raporla
 - Yazdıktan sonra dosyanın oluştuğunu doğrula: `ls -la <dosya>`
-- Var olan bir raporun üzerine yazmadan önce sor; tarih ekle:
-  `ntp_durum_2026-08-28.csv`
+- Var olan raporun üzerine yazmadan önce sor; ada tarih ekle:
+  `ntp_durum_2026-08-29.csv`
 - Rapora **ne zaman ve hangi komutla** toplandığını yaz; altı ay sonra
   bakan kişi bilsin

@@ -142,7 +142,7 @@ geri koyabilecek kadar ayrıntılı.
 
 ## Beceriler
 
-`aider-skills/` altında 30 beceri var. Agent modunda model bunları
+`aider-skills/` altında 32 beceri var. Agent modunda model bunları
 kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 
 | Beceri | Ne zaman |
@@ -157,7 +157,8 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 | `mcp-ekle` | MCP sunucusu ekleme, teşhis, çevrimdışı kurulum |
 | `upstream-birlestir` | Upstream'den güncelleme |
 | `rhel-yonetim` | RHEL sistem yönetimi, Satellite, IdM |
-| `ag-teshis` | Ağ, güvenlik duvarı, SELinux |
+| `ag-teshis` | Ağ, güvenlik duvarı, DNS, port erişimi |
+| `selinux` | AVC okuma, boolean, port etiketi, dosya bağlamı |
 | `depolama` | Disk dolması teşhisi, inode, yeri kim yiyor |
 | `disk-ekleme` | LVM, XFS büyütme, fstab, NFS mount |
 | `sunucu-teslim` | Devralma, Satellite kaydı, güncelleme, teslim |
@@ -174,7 +175,8 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 | `servis-teshis` | PostgreSQL, Redis, RabbitMQ — konteyner tespiti dahil |
 | `web-sunucu` | Nginx, Apache, 502/504, SELinux |
 | `sertifika-tls` | openssl: süre, SAN, zincir, kurumsal CA, starttls |
-| `rapor-uret` | CSV / Excel / PDF / HTML rapor üretimi |
+| `rapor-uret` | Biçim seçimi, CSV ve HTML (bağımlılıksız) |
+| `rapor-excel-pdf` | xlsx ve PDF: bağımlılık, font, çevrimdışı kurulum |
 | `git-azuredevops` | Git, PR, pipeline, merge çakışması |
 | `belge-yaz` | README, runbook, mimari notu |
 

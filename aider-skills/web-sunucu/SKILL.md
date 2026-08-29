@@ -64,23 +64,16 @@ echo | openssl s_client -connect localhost:443 -servername <alan> 2>/dev/null \
 
 ## SELinux — RHEL'de sık suçlu
 
-Nginx/Apache'nin upstream'e bağlanmasını ya da statik dosya okumasını engeller.
-Belirti: yapılandırma doğru, port açık, ama `Permission denied`.
+Yapılandırma doğru, port açık, ama `Permission denied` ya da upstream'e
+bağlanamıyor:
 
 ```bash
+sestatus | grep -i "current mode"
 ausearch -m avc -ts recent | grep -E 'httpd|nginx'
-getsebool -a | grep httpd_can_network
-ls -Z /var/www/html
 ```
 
-Sık gereken boolean'lar: `httpd_can_network_connect` (reverse proxy),
-`httpd_can_network_connect_db`, `httpd_read_user_content`.
-
-Dosya etiketi yanlışsa `restorecon -Rv <yol>`, kalıcı kural gerekiyorsa
-`semanage fcontext -a -t httpd_sys_content_t '<yol>(/.*)?'` sonra `restorecon`.
-
-**SELinux'u asla devre dışı bırakma.** Banka ortamında CIS denetimine takılır;
-boolean ya da fcontext ile çöz, gerekçesini yaz.
+Düzeltme (boolean, port etiketi, `restorecon`) için `selinux` becerisine geç.
+En sık gereken boolean `httpd_can_network_connect`.
 
 ## Raporlama
 
