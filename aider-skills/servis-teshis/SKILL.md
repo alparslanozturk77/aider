@@ -1,27 +1,55 @@
 ---
 name: servis-teshis
-description: PostgreSQL, Redis, RabbitMQ, Nginx ya da Apache sorunlarını incelerken kullan. Sağlık kontrolü, bağlantı, kaynak ve yapılandırma doğrulama. "postgres", "postgresql", "psql", "redis", "rabbitmq", "nginx", "apache", "httpd", "veritabanı yavaş", "bağlanamıyor" isteklerinde tetiklenir.
+description: PostgreSQL, Redis ya da RabbitMQ sorunlarını incelerken kullan. Sağlık kontrolü, bağlantı, kaynak ve kuyruk durumu. "postgres", "postgresql", "psql", "redis", "rabbitmq", "veritabanı yavaş", "kuyruk şişti", "bağlanamıyor" isteklerinde tetiklenir. Nginx/Apache için `web-sunucu` becerisini kullan.
 ---
 
-Önce servisin ayakta olduğunu doğrula, sonra içine bak.
+## Adım 0 — servis konteynerde mi? (önce bunu sor)
+
+`systemctl is-active postgresql` **inactive** derken port dinleniyorsa servis
+konteynerdedir. `systemctl`e bakıp "servis kapalı" demek en sık yapılan hata.
+
+```bash
+ss -tlnp | grep <port>
+```
+
+Dinleyen süreç `conmon` ise → podman konteyneri. `docker-proxy` ise → docker.
+
+```bash
+podman ps --format "{{.Names}}\t{{.Image}}\t{{.Status}}"
+podman port -a                  # hangi konteyner hangi portu yayınlıyor
+podman inspect --format "{{.Name}} {{.State.Health.Status}}" <ad>
+```
+
+Konteynerse tüm komutlar `podman exec` içinden çalışır:
+
+```bash
+podman exec <ad> psql -U postgres -c "..."
+podman exec <ad> redis-cli ping
+podman logs --tail 200 <ad>
+```
+
+**Host'taki istemci sürümü konteynerdekiyle aynı olmayabilir.** Ölçüldü: bir
+sunucuda host `psql` 16.14, konteynerde PostgreSQL 18.4. Host istemcisiyle
+bağlanmak sürüm uyarısı ya da eksik özellik verir; `podman exec` kullan.
+
+`pg_isready` host'ta "no response" diyebilir — unix soketi konteynerin içinde,
+host'ta yok. Bu servisin kapalı olduğu anlamına gelmez.
+
+Konteyner değilse normal yol:
 
 ```bash
 systemctl is-active <servis>
 journalctl -u <servis> -p err -n 100 --no-pager
-ss -tlnp | grep <port>        # gerçekten dinliyor mu
 ```
 
-Kubernetes'te çalışıyorsa `k8s-rancher` becerisine geç; aşağıdaki komutlar
-`kubectl exec` içinden de çalışır ama önce pod durumuna bakılmalı.
+Kubernetes'te çalışıyorsa `k8s-rancher` becerisine geç.
 
 ## PostgreSQL
 
 Salt-okunur sağlık:
 
 ```bash
-pg_isready -h localhost -p 5432
 psql -c "SELECT version();"
-psql -c "SELECT count(*) FROM pg_stat_activity;"
 psql -c "SELECT state, count(*) FROM pg_stat_activity GROUP BY state;"
 psql -c "SELECT pid, now()-query_start AS sure, state, left(query,60)
          FROM pg_stat_activity
@@ -33,7 +61,7 @@ psql -c "SELECT pg_size_pretty(pg_database_size(current_database()));"
 Neye bakılır:
 
 - `max_connections`'a yaklaşan bağlantı sayısı → havuz tükeniyor
-- `idle in transaction` durumunda uzun süre kalan oturumlar → kilit tutuyor,
+- `idle in transaction` durumunda uzun kalan oturumlar → kilit tutuyor,
   vacuum'u engelliyor
 - `pg_stat_replication` içinde büyüyen `replay_lag` → replika geride
 - Uzun süren sorgular → `pg_locks` ile kilit zinciri kontrol et
@@ -45,12 +73,10 @@ Neye bakılır:
 
 ```bash
 redis-cli ping
-redis-cli info server
 redis-cli info memory
 redis-cli info replication
 redis-cli info clients
 redis-cli slowlog get 10
-redis-cli --stat
 redis-cli dbsize
 ```
 
@@ -78,9 +104,8 @@ rabbitmqctl status
 rabbitmq-diagnostics check_running
 rabbitmq-diagnostics check_port_connectivity
 rabbitmqctl list_queues name messages consumers memory
-rabbitmqctl list_connections
-rabbitmqctl cluster_status
 rabbitmqctl list_queues name messages_unacknowledged
+rabbitmqctl cluster_status
 ```
 
 Neye bakılır:
@@ -96,42 +121,8 @@ bloklar. Uygulama hata vermez, sadece bekler.
 **Asla onaysız:** `purge_queue`, `delete_queue`, `stop_app`, `reset`
 (`reset` düğümü kümeden çıkarır ve veriyi siler), `force_boot`.
 
-## Nginx / Apache
-
-Yapılandırma değiştirmeden önce **her zaman** doğrula:
-
-```bash
-nginx -t                      # sözdizimi testi
-nginx -T                      # etkin yapılandırmanın tamamı
-httpd -t                      # Apache
-apachectl configtest
-```
-
-```bash
-ss -tlnp | grep -E ':80|:443'
-tail -n 200 /var/log/nginx/error.log
-tail -n 200 /var/log/httpd/error_log
-openssl s_client -connect localhost:443 -servername <alan> </dev/null 2>&1 | head -20
-```
-
-Neye bakılır:
-
-- `upstream timed out` / `connect() failed` → arka uç ayakta değil, sorun web
-  sunucusunda değil
-- `502 Bad Gateway` → upstream çöktü ya da yanlış adres
-- `504` → upstream yavaş, `proxy_read_timeout` yetmiyor
-- Sertifika süresi: `openssl x509 -enddate -noout -in <cert>`
-- SELinux RHEL'de sık suçludur: `ausearch -m avc -ts recent` — nginx'in
-  upstream'e bağlanmasını engelleyebilir (`httpd_can_network_connect`)
-
-**Fark önemli:** `reload` yapılandırmayı yeniden okur, bağlantıları korur.
-`restart` bağlantıları keser. Üretimde `reload` tercih et ve öncesinde `-t`
-ile doğrula — bozuk yapılandırmayla restart servisi tamamen düşürür.
-
 ## Raporlama
 
-Belirtiyi sebebe bağla. "Redis bellek %94" yetmez; "Redis maxmemory'ye
-yaklaştı, son saatte 40k anahtar evict edildi, cache hit oranı düştü — API
-gecikmesinin sebebi bu olabilir" doğru rapordur.
-
-Ölçmediğin şeyi söyleme. Komutu çalıştır, çıktısını göster.
+Belirtiyi sebebe bağla: "Redis bellek %94" yetmez, "maxmemory'ye yaklaştı, son
+saatte 40k anahtar evict edildi — API gecikmesinin sebebi bu olabilir" doğru
+rapordur. Ölçmediğin şeyi söyleme; komutu çalıştır, çıktısını göster.

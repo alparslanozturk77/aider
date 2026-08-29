@@ -428,7 +428,7 @@ orada olduğunu söyler.
   bir sunucunun ölümünün diğerlerini etkilemediği
 
 - **Model tanımlama** — `/model-ekle` akışı: önek, izinler, üzerine yazma
-- **Beceriler** — depodaki sekiz becerinin yüklenebildiği ve tetikleme
+- **Beceriler** — depodaki 26 becerinin yüklenebildiği ve tetikleme
   açıklamalarının var olduğu
 
 Ayrıca `scripts/fork_dogrula.py` fork değişmezlerini davranışsal olarak sınar.
