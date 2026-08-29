@@ -157,7 +157,9 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 | `upstream-birlestir` | Upstream'den güncelleme |
 | `rhel-yonetim` | RHEL sistem yönetimi, Satellite, IdM |
 | `ag-teshis` | Ağ, güvenlik duvarı, SELinux |
-| `depolama` | Disk dolması, LVM, mount |
+| `depolama` | Disk dolması teşhisi, inode, yeri kim yiyor |
+| `disk-ekleme` | LVM, XFS büyütme, fstab, NFS mount |
+| `sunucu-teslim` | Devralma, Satellite kaydı, güncelleme, teslim |
 | `rhel-surumleri` | RHEL 7/8/9/10 komut ve yapılandırma farkları |
 | `guvenlik-ajani` | SEP / Cortex XDR keşif yordamı |
 | `idm-yonetim` | IdM/FreeIPA istemci kurulumu, Kerberos, SSSD |
