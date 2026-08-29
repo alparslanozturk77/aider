@@ -197,6 +197,20 @@ Yerelde üretmek için `paketleme/` altındaki `aider-agent.spec` ve
 **Pakete belge sitesi ve testler girmez** (`aider/website` tek başına 68 MB);
 çalışma zamanında gerekmiyorlar. Wheel'lerle birlikte paket ~115 MB.
 
+### Yalnızca en son sürümün paketi tutulur
+
+Sürüm başına ~230 MB (iki RHEL sürümü). Her sürümde biriktirmenin faydası
+yok — kurulacak olan her zaman en güncelidir. İş akışının son adımı, yeni
+paketler yüklendikten sonra **eski sürümlerin `.tar.gz` ve `.rpm`
+dosyalarını siler.**
+
+Silinen yalnızca ikili dosyalardır: eski sürümlerin kendisi, notları ve
+etiketleri durur, dolayısıyla `git checkout agent-v0.1.0` ile eski koda her
+zaman dönebilirsin — sadece hazır paketi yeniden üretmen gerekir
+(workflow_dispatch ile o etiketten tetiklenebilir).
+
+Actions artefaktları da 7 gün sonra düşer (`retention-days: 7`).
+
 ## Araçlar
 
 | Araç | Ne yapar | Onay ister |

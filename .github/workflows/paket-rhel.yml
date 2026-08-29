@@ -8,6 +8,9 @@
 
 name: RHEL paketleri
 
+permissions:
+  contents: write
+
 on:
   push:
     tags:
@@ -92,6 +95,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: aider-agent-rhel${{ matrix.rhel }}
+          retention-days: 7
           path: |
             *.tar.gz
             *.rpm
@@ -103,3 +107,36 @@ jobs:
           files: |
             *.tar.gz
             *.rpm
+
+  # Paketler sürüm başına ~230 MB (iki RHEL sürümü x ~115 MB). Her sürümde
+  # birikirse depo hızla şişer ve eski paketin kimseye faydası yok — kurulacak
+  # olan her zaman en günceli. Bu iş yalnızca EN SON sürümün paketlerini
+  # bırakır; eski sürümlerin kendisi, notları ve etiketleri durur, sadece
+  # ikili dosyaları silinir.
+  eski-paketleri-sil:
+    needs: paket
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Eski sürümlerin paketlerini sil
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GUNCEL: ${{ github.ref_name }}
+        run: |
+          set -eu
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
+            --json tagName -q '.[].tagName' > /tmp/etiketler
+
+          while read -r etiket; do
+            [ "$etiket" = "$GUNCEL" ] && continue
+            gh release view "$etiket" --repo "$GITHUB_REPOSITORY" \
+              --json assets -q '.assets[].name' 2>/dev/null \
+              | grep -E '\.(tar\.gz|rpm)$' \
+              | while read -r varlik; do
+                  echo "siliniyor: $etiket / $varlik"
+                  gh release delete-asset "$etiket" "$varlik" \
+                    --repo "$GITHUB_REPOSITORY" --yes
+                done
+          done < /tmp/etiketler
+
+          echo "en son sürüm ($GUNCEL) paketleri korundu"
