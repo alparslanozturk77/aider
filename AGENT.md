@@ -322,9 +322,83 @@ Oturum içinde `/plan` ile açıp kapatabilirsin.
 | `/todo` | Mevcut görev listesini gösterir |
 | `/model <ad>` | Modeli değiştirir (aider'ın kendi komutu) |
 | `/model-ekle` | Yeni modeli adım adım tanımlar ve kaydeder |
+| `/voice` | Mikrofondan kayıt alıp metne çevirir (bkz. Ses girişi) |
 
 `/skills` beceriyi yeniden okuduğu için, `SKILL.md` dosyasını düzenleyip aider'ı
 yeniden başlatmadan test edebilirsin.
+
+## Ses girişi (`/voice`)
+
+Upstream aider'da hazır gelen bir özellik; fork bunu değiştirmedi. Mikrofondan
+kayıt alır, metne çevirir ve **prompt'a yazar** — komutu senin yerine
+çalıştırmaz, yazdığın yere metni koyar, sen Enter'a basarsın.
+
+```
+/voice
+```
+
+| Bayrak | Ne yapar |
+|---|---|
+| `--voice-format` | Kayıt biçimi (`wav` varsayılan; `mp3`, `webm` ffmpeg ister) |
+| `--voice-language` | ISO 639-1 dil kodu, örn. `tr`. Verilmezse otomatik. |
+| `--voice-input-device` | Giriş aygıtı adı |
+
+Türkçe için `--voice-language tr` vermek doğruluğu belirgin biçimde artırır.
+
+### Bağımlılıklar
+
+`sounddevice`, `soundfile`, `numpy` ve sistem tarafında **portaudio** gerekir.
+Bu geliştirme makinesinde dördü de kurulu (ölçüldü). RHEL'de:
+
+```bash
+dnf install portaudio                 # sistem kütüphanesi
+pip install sounddevice soundfile     # çevrimdışıysa wheel taşı
+```
+
+Sunucuda mikrofon olmadığı için `/voice` pratikte **yerel makinede** anlamlı.
+
+### Kurumsal ortam için kritik uyarı
+
+`aider/voice.py` çeviriyi şöyle çağırıyor:
+
+```python
+transcript = litellm.transcription(model="whisper-1", file=fh, ...)
+```
+
+İki nokta önemli:
+
+1. **Model adı `whisper-1` olarak sabit yazılmış.** Kurum endpoint'inde bu adla
+   bir model yoksa çalışmaz.
+2. **`api_base` ve `api_key` hiç geçirilmiyor.** `litellm.transcription` bu iki
+   parametreyi kabul ediyor (doğrulandı) ama aider vermiyor; adres yalnızca
+   `OPENAI_API_BASE` ortam değişkeninden çözülüyor.
+
+Sonucu şu: **`OPENAI_API_BASE` boşsa ses kaydın `api.openai.com`'a gider.**
+Sohbet tarafındaki sessiz yönlenme tuzağının aynısı, ama bu sefer giden şey
+sesin. Banka ortamında bu, verinin kurumdan çıkması demektir.
+
+Bu yüzden `/voice` kullanmadan önce:
+
+```bash
+echo "$OPENAI_API_BASE"      # boş dönerse /voice KULLANMA
+```
+
+Kurum endpoint'i `/v1/audio/transcriptions` uç noktasını sunmuyorsa `/voice`
+zaten hata verecektir — sessizce dışarı gitmesindense hata alması iyidir.
+Endpoint'in bu ucu destekleyip desteklemediği:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -X POST "$OPENAI_API_BASE/audio/transcriptions" \
+  -H "Authorization: Bearer $OPENAI_API_KEY"
+```
+
+`404` → uç yok, `/voice` çalışmaz. `400` → uç var, eksik parametreden şikâyet
+ediyor demektir.
+
+Ses girişini kurum içinde tutmanın alternatifi yerel bir Whisper sunucusu
+(`faster-whisper` OpenAI uyumlu bir uç sunabiliyor) ve `OPENAI_API_BASE`'i
+ona yöneltmektir. Bu fork'ta denenmedi.
 
 ## Bayraklar
 

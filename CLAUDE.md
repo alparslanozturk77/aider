@@ -185,6 +185,14 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 
 Yeni beceri: `/skills new <ad>` — iskeleti `aider-skills/` altına yazar.
 
+## Ses girişi
+
+`/voice` upstream'den geliyor, fork dokunmadı. İki tuzağı var ve ikisi de
+sessiz: `aider/voice.py` model adını `whisper-1` olarak sabit yazıyor ve
+`litellm.transcription`'a `api_base` geçirmiyor — parametre kabul ediliyor
+ama verilmiyor. Dolayısıyla `OPENAI_API_BASE` boşsa **ses kaydı
+`api.openai.com`'a gider**. Ayrıntı ve kontrol yordamı `AGENT.md`'de.
+
 ## Mod göstergesi
 
 Mevcut izin modu prompt'un içinde durur:
