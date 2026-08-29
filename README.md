@@ -66,7 +66,7 @@ Derleme gerekmez. Sonra program içinden endpoint'i tanımla:
 
 ## Beceriler
 
-`aider-skills/` altında 36 beceri var. Sistem promptuna yalnızca
+`aider-skills/` altında 37 beceri var. Sistem promptuna yalnızca
 `ad: açıklama` satırı girer; gövde model isteyince yüklenir, dolayısıyla
 beceri sayısı bağlam maliyeti yaratmaz.
 

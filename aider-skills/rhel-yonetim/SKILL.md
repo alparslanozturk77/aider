@@ -1,6 +1,6 @@
 ---
 name: rhel-yonetim
-description: RHEL sunucularda sistem yönetimi yaparken kullan — servis, log, paket, abonelik, Satellite (hammer), IdM (ipa). "servis", "systemctl", "journalctl", "dnf", "satellite", "hammer", "ipa", "idm", "abonelik", "yama", "repo" isteklerinde tetiklenir.
+description: RHEL sunucularda sistem yönetimi yaparken kullan — servis, log, paket, abonelik, Satellite (hammer), IdM (ipa). "servis", "systemctl", "journalctl", "dnf", "satellite", "hammer", "ipa", "idm", "abonelik", "repo" isteklerinde tetiklenir. Güncelleme ve yama için `sistem-guncelleme`.
 ---
 
 ## Önce: gerçekten Linux mu
@@ -56,26 +56,17 @@ zaten cevaplanamaz.
 ### Sunucu adını UYDURMA
 
 Kullanıcı `skyup` diyorsa komut `ssh skyup` olur. Başına `user@`, sonuna
-`.kurum.local` gibi bir alan adı **EKLEME**. Bu adlar genelde
-`~/.ssh/config` içinde tanımlı takma adlardır ve kullanıcı, anahtarı ve
-gerçek adresi orada bir kez ayarlamıştır.
-
-Adın çözülüp çözülmediğinden emin değilsen bağlanmayı denemeden önce bak:
+`.kurum.local` **EKLEME** — bu adlar `~/.ssh/config` içindeki takma adlardır.
+`Ssh` aracı bunu zaten reddeder; elle `ssh` çalıştırırken de aynı kural.
 
 ```bash
-ssh -G <ad> | head -3          # hostname, user, port
-grep -iE "^Host " ~/.ssh/config
+ssh -G <ad> | head -3          # takma ad neye çözülüyor
 ```
 
-Takma ad tanımlı değilse kullanıcıya sor. Tahmin edilen bir adrese bağlanmayı
-denemek en iyi ihtimalle zaman aşımı, en kötü ihtimalle yanlış sunucuya
-bağlanmaktır.
+## Sistem güncelleme
 
-Adres çözülmüyorsa önce onu söyle, bağlanmayı deneme:
-
-```bash
-getent hosts <sunucu> || echo "ad çözülemedi"
-```
+Paket yöneticisi `dnf`; `apt` RHEL ailesinde yoktur. Güncelleme, güvenlik
+yaması ve yeniden başlatma kararı için `sistem-guncelleme` becerisine geç.
 
 ## Salt-okunur ile yan etkiliyi ayır
 
