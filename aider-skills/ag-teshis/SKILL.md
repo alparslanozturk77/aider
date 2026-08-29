@@ -91,7 +91,7 @@ getent hosts <ad>                   # /etc/hosts + DNS birlikte
 dig +short <ad>
 resolvectl status | head -20
 ip route get <hedef-ip>
-traceroute -n -w1 -m10 <hedef>
+tracepath -n <hedef>              # traceroute minimal kurulumda yok
 ```
 
 `getent` çözüyor ama `dig` çözmüyorsa kayıt `/etc/hosts` içindedir.

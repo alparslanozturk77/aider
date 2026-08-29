@@ -90,20 +90,40 @@ kubectl apply -f x.yaml --dry-run=server
 kubectl diff -f x.yaml
 ```
 
-## Docker (az sayıda sunucuda)
+## Podman ve Docker
+
+**RHEL / AlmaLinux / Rocky üzerinde varsayılan `podman`'dır, `docker` genelde
+kurulu DEĞİLDİR** (doğrulandı: AlmaLinux 10.2'de podman var, docker yok).
+Önce hangisinin olduğuna bak:
 
 ```bash
-docker ps -a                       # çıkmış kaplar da görünür
-docker logs --tail 200 <kap>
-docker inspect <kap>
-docker stats --no-stream
-docker compose ps
-docker compose logs --tail=200
+command -v podman docker
 ```
 
-Yan etkili: `docker rm`, `docker rmi`, `docker system prune` (bu sonuncusu
-kullanılmayan volume'ları da silebilir — veri kaybı riski), `docker compose
-down` (`-v` ile volume'ları da siler).
+Komutlar büyük ölçüde aynı; `docker` yerine `podman` yaz:
+
+```bash
+podman ps -a                       # çıkmış kaplar da görünür
+podman logs --tail 200 <kap>
+podman inspect <kap>
+podman stats --no-stream
+podman system df                   # imaj/volume disk kullanımı
+podman-compose ps                  # compose ayrı paket
+```
+
+Docker varsa aynı komutlar `docker` önekiyle, compose için `docker compose`.
+
+Podman'a özgü iki not: kapsayıcılar kök olmadan (rootless) çalışabilir, o
+zaman `podman ps` kullanıcı bazlıdır — başka kullanıcının kapsayıcısını
+görmezsin. Ve `systemctl --user` altında Quadlet birimleri olabilir:
+
+```bash
+systemctl --user list-units 'podman*'
+```
+
+Yan etkili: `podman rm`, `podman rmi`, `podman system prune` (bu sonuncusu
+kullanılmayan volume'ları da silebilir — veri kaybı riski), `podman-compose
+down` (`-v` ile volume'ları da siler). Docker karşılıkları aynı.
 
 ## Raporlama
 

@@ -32,12 +32,26 @@ En sık suçlular: `/var/log`, `/var/lib/docker`, `/var/lib/containers`,
 
 ## 3. Silinmiş ama açık tutulan dosyalar
 
+`df` doluyu, `du` boşu gösteriyorsa sebep budur: bir süreç silinmiş bir
+dosyayı hâlâ açık tutuyor, alan ancak süreç kapanınca serbest kalır.
+
 ```bash
 lsof +L1 2>/dev/null | head -20
 ```
 
-`df` doluyu, `du` boşu gösteriyorsa sebep budur: bir süreç silinmiş bir
-dosyayı hâlâ açık tutuyor, alan ancak süreç kapanınca serbest kalır.
+**`lsof` minimal RHEL/AlmaLinux kurulumlarında YOKTUR** (doğrulandı: AlmaLinux
+10.2). Kurmadan, `/proc` üzerinden aynı bilgiye ulaşılır:
+
+```bash
+ls -l /proc/*/fd 2>/dev/null | grep deleted
+```
+
+Hangi sürecin tuttuğunu bulmak için PID'i yoldan oku:
+
+```bash
+for p in /proc/[0-9]*; do
+  ls -l $p/fd 2>/dev/null | grep -q deleted && echo "$p $(cat $p/comm)"
+done
 
 Çözüm: ilgili servisi yeniden başlat (yan etkili, **onay al**). Genelde
 suçlu, log dosyası döndürülmüş ama yeniden başlatılmamış bir servistir.

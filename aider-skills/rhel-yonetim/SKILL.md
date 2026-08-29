@@ -82,8 +82,9 @@ journalctl -p err -b --no-pager
 dnf list installed <paket>
 dnf check-update
 rpm -qa | grep <paket>
-subscription-manager status
-subscription-manager list --consumed
+subscription-manager status          # YALNIZCA RHEL
+subscription-manager list --consumed # AlmaLinux/Rocky'de bu komut YOK
+dnf repolist                         # her yerde çalışır, depo durumu
 df -h ; free -m ; uptime
 ```
 
