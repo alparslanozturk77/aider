@@ -1,6 +1,6 @@
 ---
 name: beceri-yaz
-description: Yeni bir aider becerisi yazarken ya da var olanı düzeltirken kullan. Beceri biçimini, tetikleme mantığını ve sık yapılan hataları anlatır. "beceri yaz", "skill ekle", "yeni beceri", "skill çalışmıyor" isteklerinde tetiklenir.
+description: Sıfırdan yeni bir aider becerisi yazarken kullan. Beceri biçimini, tetikleme mantığını ve sık yapılan hataları anlatır. "beceri yaz", "skill ekle", "yeni beceri", "skill çalışmıyor" isteklerinde tetiklenir. Var olan beceriyi denetlemek ve düzeltmek için `beceri-gelistir`.
 ---
 
 ## Beceri nedir
@@ -66,68 +66,25 @@ olan bağlamı yer ve model ortasını kaçırır.
 `SKILL.md`'yi düzenledikten sonra `/skills` diskten yeniden yükler; aider'ı
 kapatmana gerek yok.
 
-## Çevrimdışı ortamda komut referansı becerisi yazmak
+## Çevrimdışı ortamda komut referansı
 
 Model internete çıkamıyorsa, bilmediği bir aracın sözdizimini **arayamaz** —
 uydurur. `hammer`, `ipa`, `subscription-manager` gibi araçlarda bu, çalışmayan
 ya da yanlış şey yapan komutlar demektir.
 
-Çözüm: referansı hafızadan değil, **aracın kendi yardım çıktısından** üret.
+Referansı hafızadan değil, aracın kendi `--help` çıktısından üret ve her
+salt-okunur komutu gerçek sunucuda çalıştırarak doğrula. Tam yordam
+`beceri-gelistir` becerisinde.
 
-### Yordam
+Asıl değer komut listesinde değil, **çıktının nasıl okunacağında**: hangi alan
+hangi sorunu gösterir, eşik nedir, ne zaman alarm verilir. Komutun kendisi
+zaten `--help`'te var.
 
-Bu adımları becerinin kullanılacağı **gerçek sunucuda** yap.
-
-**1. Aracın var olduğunu ve sürümünü doğrula.**
-
-```bash
-command -v hammer && hammer --version
-```
-
-Araç yoksa beceri yazma — önce kullanıcıya sor.
-
-**2. Komut ağacını çıkar.**
-
-```bash
-hammer --help
-hammer host --help
-hammer host list --help
-```
-
-`ipa` için: `ipa help topics`, `ipa help commands`, `ipa <komut> --help`
-
-Çıktıyı **oku**, ezberden yazma. Alt komut adları sürümden sürüme değişir.
-
-**3. Yalnızca ihtiyaç duyulan yüzeyi al.**
-
-`hammer` yüzlerce alt komut içerir; hepsini beceriye koyma. Kullanıcının
-fiilen yaptığı işleri sor ve o kadarını belgele. Beceri gövdesi 120 satırı
-aşıyorsa fazla geniş tutmuşsundur; domaine göre böl.
-
-**4. Salt-okunur ile yan etkiliyi ayır.**
-
-Referansta iki başlık aç. Yan etkili komutların yanına ne değiştirdiğini yaz.
-Bu ayrım izin kurallarının da temeli olur.
-
-**5. Her komutu çalıştırarak doğrula.**
-
-Salt-okunur olanları gerçekten çalıştır ve çıktının beklediğin biçimde
-olduğunu gör. Çalıştırmadığın komutu referansa **koyma**, ya da açıkça
-"doğrulanmadı" diye işaretle.
-
-**6. Çıktının nasıl okunacağını yaz.**
-
-Asıl değer burada. Komutun kendisi `--help`'te zaten var; modelin bilmediği
-şey çıktının ne anlama geldiği: hangi alan hangi sorunu gösterir, eşik değer
-nedir, ne zaman alarm verilir.
-
-### Beceriye sürüm ve tarih yaz
+Doğruladığın sürümü ve tarihi yaz:
 
 ```markdown
 Doğrulandı: Satellite 6.15, hammer 3.7.0 — 2026-08-28
 ```
-
-Sürüm değişince referansın güncellenmesi gerektiğini bu satır hatırlatır.
 
 ## Sık yapılan hatalar
 
@@ -137,3 +94,5 @@ Sürüm değişince referansın güncellenmesi gerektiğini bu satır hatırlat�
 - Aynı işi yapan ikinci bir beceri yazmak; önce `/skills` ile bak
 - **Komut sözdizimini hafızadan yazmak.** Çevrimdışı bir modelde bu, kalıcı
   yanlış bilgi demektir. `--help` çıktısından üret ve çalıştırarak doğrula.
+- Var olan bir beceriyi düzeltirken bu beceriyi kullanmak — o iş
+  `beceri-gelistir`'in işi.

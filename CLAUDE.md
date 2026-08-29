@@ -142,7 +142,7 @@ geri koyabilecek kadar ayrıntılı.
 
 ## Beceriler
 
-`aider-skills/` altında 26 beceri var. Agent modunda model bunları
+`aider-skills/` altında 27 beceri var. Agent modunda model bunları
 kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 
 | Beceri | Ne zaman |
@@ -153,6 +153,7 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 | `hata-ayikla` | Hata ve çöken test araştırması |
 | `test-yaz` | Test yazma |
 | `beceri-yaz` | Yeni beceri yazma |
+| `beceri-gelistir` | Var olan beceriyi gerçek sunucuda doğrulayıp düzeltme |
 | `mcp-ekle` | MCP sunucusu ekleme, teşhis, çevrimdışı kurulum |
 | `upstream-birlestir` | Upstream'den güncelleme |
 | `rhel-yonetim` | RHEL sistem yönetimi, Satellite, IdM |
