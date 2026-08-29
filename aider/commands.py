@@ -1192,11 +1192,11 @@ class Commands:
         return self._generic_chat_command(args, "architect")
 
     def cmd_agent(self, args):
-        """Enter agentic tool-calling mode. If no prompt provided, switches to agent mode."""  # noqa
+        """Agent moduna geçer. İstek verilirse doğrudan onu çalıştırır."""  # noqa
         return self._generic_chat_command(args, "agent")
 
     def cmd_plan(self, args):
-        """Toggle plan mode: research and propose a plan before making any edits."""  # noqa
+        """Plan modunu açıp kapatır: önce araştırıp plan sunar, dosyaya dokunmaz."""  # noqa
         coder = self.coder
         if getattr(coder, "edit_format", None) != "agent":
             # Plan modu araç döngüsüne bağlı; önce agent moduna geç.
@@ -1216,7 +1216,7 @@ class Commands:
         return self.coder
 
     def cmd_skills(self, args):
-        """List agent skills, reload them, or scaffold a new one with: /skills new <name>"""  # noqa
+        """Becerileri listeler, diskten yeniden yükler; yeni iskelet: /skills new <ad>"""  # noqa
         coder = self._require_agent()
         if not coder:
             return
@@ -1295,7 +1295,7 @@ Sonucun kullanıcıya nasıl sunulacağını tarif et.
         self.io.tool_output("Düzenledikten sonra /skills ile yeniden yükle.")
 
     def cmd_mcp(self, args):
-        """List connected MCP servers and their tools. Use /mcp reload to restart them."""  # noqa
+        """Bağlı MCP sunucularını ve araçlarını listeler. Yeniden başlat: /mcp reload"""  # noqa
         coder = self._require_agent()
         if not coder:
             return
@@ -1333,7 +1333,7 @@ Sonucun kullanıcıya nasıl sunulacağını tarif et.
             self.io.tool_error(f"başlatılamadı — {err}")
 
     def cmd_mod(self, args):
-        """Show or change the agent permission mode: /mod [plan|onay|oto]"""  # noqa
+        """İzin modunu gösterir ya da değiştirir: /mod [plan|onay|oto]"""  # noqa
         coder = self._require_agent()
         if not coder:
             return
@@ -1366,7 +1366,7 @@ Sonucun kullanıcıya nasıl sunulacağını tarif et.
         self.io.tool_output(f"{isaret} {ad} açık")
 
     def cmd_hatirla(self, args):
-        """Save a persistent note: /hatirla [tur] <başlık> :: <not>"""  # noqa
+        """Kalıcı not kaydeder: /hatirla [tur] <başlık> :: <not>"""  # noqa
         from aider.agent.memory import TYPES
 
         coder = self._require_agent()
@@ -1406,7 +1406,7 @@ Sonucun kullanıcıya nasıl sunulacağını tarif et.
         self.io.tool_output("Sonraki oturumlarda otomatik yüklenecek.")
 
     def cmd_bellek(self, args):
-        """List persistent notes, or reload them from disk."""  # noqa
+        """Kalıcı notları listeler ya da diskten yeniden yükler."""  # noqa
         coder = self._require_agent()
         if not coder:
             return
@@ -1435,7 +1435,7 @@ Sonucun kullanıcıya nasıl sunulacağını tarif et.
             )
 
     def cmd_unut(self, args):
-        """Delete a persistent note by name: /unut <başlık>"""  # noqa
+        """Kalıcı bir notu adıyla siler: /unut <başlık>"""  # noqa
         coder = self._require_agent()
         if not coder:
             return
@@ -1459,7 +1459,7 @@ Sonucun kullanıcıya nasıl sunulacağını tarif et.
         self.io.tool_output(f"Silindi: {path}")
 
     def cmd_model_ekle(self, args):
-        """Set up a model interactively and write it to your home config."""  # noqa
+        """Modeli adım adım tanımlar ve ev dizinindeki yapılandırmaya yazar."""  # noqa
         from aider.agent.model_setup import ModelSetupCancelled, run_setup
 
         try:
@@ -1484,7 +1484,7 @@ Sonucun kullanıcıya nasıl sunulacağını tarif et.
         self.io.tool_output("Sonraki başlatmada bu model kullanılacak.")
 
     def cmd_permissions(self, args):
-        """Show the agent's permission mode and rules."""  # noqa
+        """Ajanın izin modunu ve kurallarını gösterir."""  # noqa
         coder = self._require_agent()
         if not coder:
             return
@@ -1508,7 +1508,7 @@ Sonucun kullanıcıya nasıl sunulacağını tarif et.
         )
 
     def cmd_todo(self, args):
-        """Show the agent's current task list."""  # noqa
+        """Ajanın mevcut görev listesini gösterir."""  # noqa
         coder = self.coder
         if getattr(coder, "edit_format", None) != "agent":
             self.io.tool_error("Görev listesi yalnızca agent modunda kullanılır (/agent).")
