@@ -1,0 +1,105 @@
+# RHEL 9 ve 10 için çevrimdışı kurulum paketleri üretir.
+#
+# Neden: hedef ortam bir bankanın ağa çıkamayan sunucuları. kur.sh ağ
+# istiyor; bu iş akışı bağımlılıkları wheel olarak gömen, kurulum anında
+# internet gerektirmeyen tgz ve RPM üretir.
+#
+# Elle tetiklenir ya da bir etiket push'unda çalışır.
+
+name: RHEL paketleri
+
+on:
+  push:
+    tags:
+      - "agent-v*"
+  workflow_dispatch:
+    inputs:
+      surum:
+        description: "Paket sürümü (örn. 0.1.0)"
+        required: true
+        default: "0.1.0"
+
+jobs:
+  paket:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rhel: ["9", "10"]
+    container:
+      image: almalinux:${{ matrix.rhel }}
+
+    steps:
+      - name: Derleme araçları
+        run: |
+          dnf -y install --setopt=install_weak_deps=False \
+            python3.12 python3.12-pip git tar gzip rpm-build
+
+      - uses: actions/checkout@v4
+
+      - name: Sürümü belirle
+        id: surum
+        run: |
+          if [ -n "${{ github.event.inputs.surum }}" ]; then
+            echo "deger=${{ github.event.inputs.surum }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "deger=${GITHUB_REF_NAME#agent-v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Wheel'leri indir
+        run: |
+          python3.12 -m pip install --upgrade pip wheel
+          python3.12 -m pip download -d wheels -r requirements.txt
+          # Uygulamanın kendi wheel'i de pakete girer: çevrimdışı ortamda
+          # "pip install -e ." derleme bağımlılığı indirmeye çalışıp düşüyor.
+          python3.12 -m pip wheel . --no-deps -w wheels
+
+      - name: tgz üret
+        env:
+          SURUM: ${{ steps.surum.outputs.deger }}
+        run: |
+          AD="aider-agent-${SURUM}"
+          mkdir -p "/tmp/${AD}"
+          git archive --format=tar HEAD | tar -x -C "/tmp/${AD}"
+          # Belge sitesi ve testler pakete girmez; 68 MB yer kaplıyor ve
+          # çalışma zamanında gerekmiyor.
+          rm -rf "/tmp/${AD}/aider/website" "/tmp/${AD}/tests" "/tmp/${AD}/benchmark"
+          cp -a wheels "/tmp/${AD}/wheels"
+          cp paketleme/cevrimdisi-kur.sh "/tmp/${AD}/"
+          chmod +x "/tmp/${AD}/cevrimdisi-kur.sh"
+          tar -czf "${AD}-rhel${{ matrix.rhel }}-x86_64.tar.gz" -C /tmp "${AD}"
+          ls -lh "${AD}-rhel${{ matrix.rhel }}-x86_64.tar.gz"
+
+      - name: RPM üret
+        env:
+          SURUM: ${{ steps.surum.outputs.deger }}
+        run: |
+          AD="aider-agent-${SURUM}"
+          mkdir -p ~/rpmbuild/SOURCES ~/rpmbuild/SPECS
+          tar -czf ~/rpmbuild/SOURCES/"${AD}.tar.gz" -C /tmp "${AD}"
+          cp paketleme/aider-agent.spec ~/rpmbuild/SPECS/
+          rpmbuild -bb ~/rpmbuild/SPECS/aider-agent.spec --define "surum ${SURUM}"
+          find ~/rpmbuild/RPMS -name '*.rpm' -exec cp {} . \;
+          ls -lh *.rpm
+
+      - name: Çevrimdışı kurulumu sına
+        run: |
+          # Ağı kapatamıyoruz ama --no-index zaten PyPI'ya bakmıyor;
+          # kurulumun wheel'lerle tamamlandığını doğruluyoruz.
+          rpm -i ./*.rpm
+          aider-agent --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aider-agent-rhel${{ matrix.rhel }}
+          path: |
+            *.tar.gz
+            *.rpm
+
+      - name: Sürüme ekle
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            *.tar.gz
+            *.rpm

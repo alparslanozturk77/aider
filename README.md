@@ -38,13 +38,27 @@ işi bitirene kadar sürdürür.
 
 ## Kurulum
 
+**Ağa çıkabilen makine:**
+
 ```bash
 git clone https://github.com/alparslanozturk77/aider.git
 cd aider && ./kur.sh
 ```
 
-RHEL 8/9/10'da derleme gerekmez; tüm bağımlılıkların hazır wheel'i var.
-Sonra program içinden endpoint'i tanımla:
+**Çevrimdışı sunucu (RHEL 9 / 10)** — bağımlılıklar paketin içinde wheel
+olarak gelir, kurulum ağ istemez. [Sürüm sayfasından](https://github.com/alparslanozturk77/aider/releases)
+indir:
+
+```bash
+tar -xzf aider-agent-0.1.0-rhel10-x86_64.tar.gz
+cd aider-agent-0.1.0 && ./cevrimdisi-kur.sh /opt/aider-agent
+# ya da:  dnf install ./aider-agent-0.1.0-1.el10.x86_64.rpm
+```
+
+RHEL 9'da önce `dnf install python3.12` gerekir (sistem Python'ı 3.9, aider
+`>=3.10` istiyor). RHEL 10'da sistem Python'ı zaten 3.12.
+
+Derleme gerekmez. Sonra program içinden endpoint'i tanımla:
 
 ```
 /model-ekle

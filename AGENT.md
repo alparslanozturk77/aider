@@ -136,6 +136,67 @@ mkdir -p .aider && cp ornek/permissions.yml .aider/permissions.yml
 > `--enable-auto-tool-choice --tool-call-parser hermes`
 > Bu açık değilse model araç çağıramaz ve düz metin yanıt verir.
 
+## Çevrimdışı kurulum paketleri (RHEL 9 / 10)
+
+`kur.sh` internete çıkar (uv indirir, depoyu klonlar). Ağa çıkamayan bir
+sunucuda işe yaramaz. Onun için iki paket biçimi var; ikisi de bağımlılıkları
+**wheel olarak içinde taşır** ve kurulum anında ağ istemez.
+
+| Biçim | Ne zaman |
+|---|---|
+| `.tar.gz` | Tek sunucuya elle kurulum. Kök yetkisi şart değil. |
+| `.rpm` | Filoya dağıtım. Satellite'ta özel depoya konabilir. |
+
+Sürüm sayfasından indirilir:
+<https://github.com/alparslanozturk77/aider/releases>
+
+### tgz
+
+```bash
+tar -xzf aider-agent-0.1.0-rhel10-x86_64.tar.gz
+cd aider-agent-0.1.0
+./cevrimdisi-kur.sh /opt/aider-agent      # hedef dizin isteğe bağlı
+aider-agent --version
+```
+
+Betik uygun Python'u kendisi arar (3.10–3.14), sanal ortamı `--no-index` ile
+kurar ve `/usr/local/bin/aider-agent` sarmalayıcısını yazar (yazma yetkisi
+yoksa atlar ve tam yolu söyler).
+
+### RPM
+
+```bash
+dnf install ./aider-agent-0.1.0-1.el10.x86_64.rpm
+aider-agent --version
+```
+
+`/opt/aider-agent` altına kurulur, sanal ortam `%post` içinde ağa çıkmadan
+oluşturulur. Kaldırınca (`dnf remove`) sanal ortam da silinir.
+
+### RHEL 9'da Python sürümü
+
+**Bu, RHEL 9'da ilk karşılaşacağın engel.** Aider `>=3.10` istiyor
+(`pyproject.toml`), RHEL 9'un sistem Python'ı ise 3.9. AppStream'den kurulur:
+
+```bash
+dnf install python3.12
+```
+
+RHEL 10'da sistem Python'ı zaten 3.12 (doğrulandı: AlmaLinux 10.2), ek bir
+şey gerekmez.
+
+### Paketleri kendin üretmek
+
+`.github/workflows/paket-rhel.yml` iş akışı `almalinux:9` ve `almalinux:10`
+konteynerlerinde ikisini de üretir; `agent-v*` etiketi push edilince çalışır
+ve dosyaları sürüme ekler. Elle de tetiklenebilir (workflow_dispatch).
+
+Yerelde üretmek için `paketleme/` altındaki `aider-agent.spec` ve
+`cevrimdisi-kur.sh` yeterlidir.
+
+**Pakete belge sitesi ve testler girmez** (`aider/website` tek başına 68 MB);
+çalışma zamanında gerekmiyorlar. Wheel'lerle birlikte paket ~115 MB.
+
 ## Araçlar
 
 | Araç | Ne yapar | Onay ister |
