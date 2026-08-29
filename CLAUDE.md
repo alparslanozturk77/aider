@@ -160,6 +160,7 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 | `depolama` | Disk dolması teşhisi, inode, yeri kim yiyor |
 | `disk-ekleme` | LVM, XFS büyütme, fstab, NFS mount |
 | `sunucu-teslim` | Devralma, Satellite kaydı, güncelleme, teslim |
+| `satellite-yonetim` | hammer ping, içerik görünümü, depo senkronu |
 | `rhel-surumleri` | RHEL 7/8/9/10 komut ve yapılandırma farkları |
 | `guvenlik-ajani` | SEP / Cortex XDR keşif yordamı |
 | `idm-yonetim` | IdM/FreeIPA istemci kurulumu, Kerberos, SSSD |

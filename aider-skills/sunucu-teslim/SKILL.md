@@ -70,6 +70,9 @@ subscription-manager repos --list-enabled | grep -E '^Repo ID'
 dnf repolist
 ```
 
+Kayıt başarısız olursa sorun istemcide değil Satellite'te olabilir:
+`satellite-yonetim` becerisine geç ve `hammer ping` ile candlepin'i kontrol et.
+
 > Bu bölümdeki seçenekler Satellite sürümüne göre değişebilir. Çalıştırmadan
 > önce `subscription-manager register --help` ile doğrula; ilk kez farklı bir
 > Satellite sürümüyle çalışıyorsan `beceri-yaz` yordamıyla kendi referansını
