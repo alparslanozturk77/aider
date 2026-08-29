@@ -228,6 +228,13 @@ kancaları, prompt önekini üreten `build_prompt_prefix()` ve prompt mesajını
 sonraki prompt'ta görünüyor. `test_prompt_message_is_callable_and_follows_mode`
 bunu koruyor.
 
+## Zayıf model dayanıklılığı
+
+4B sınıfı modeller araç sonucundan sonra **boş yanıt** vermeye eğilimli.
+Döngü eskiden ilk boşlukta pes edip işi yarıda bırakıyordu; artık bir kez
+dürtüyor (`MAX_BOS_DURTME = 1`) ve boş assistant mesajını geçmişe koymuyor.
+İki kez dürtmek boş-dürtme-boş döngüsü yarattığı için sınır bir.
+
 ## Bellek ve proje talimatları
 
 Upstream aider'da ikisi de yoktu; agent katmanı ekledi.

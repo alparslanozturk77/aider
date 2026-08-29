@@ -43,6 +43,11 @@ DEFAULT_MAX_ITERATIONS = 50
 # sonucu özetlemese bile kullanıcı ham veriyi görsün diye var.
 RESULT_PREVIEW_LINES = 15
 
+# Model araç sonucundan sonra boş dönerse kaç kez dürtülecek. Bir kez
+# yeterli: zayıf modeller çoğu zaman ikinci denemede devam ediyor, daha
+# fazlası boş-dürtme-boş döngüsüne çeviriyor.
+MAX_BOS_DURTME = 1
+
 
 class AgentCoder(Coder):
     """Claude Code tarzı araç döngüsü."""
@@ -287,6 +292,7 @@ class AgentCoder(Coder):
         # Bu mesaj boyunca hiç araç çalıştı mı? Uyarı metnini buna göre
         # seçiyoruz: araç çalıştıysa "hiçbir şey yapmadı" demek yanlış olur.
         arac_calisti = False
+        durtuldu = 0
         litellm_ex = LiteLLMExceptions()
 
         for iteration in range(self.max_iterations):
@@ -329,6 +335,24 @@ class AgentCoder(Coder):
                 # hissi veriyor. Ama araç çalıştıysa "hiçbir şey yapmadı"
                 # demek yanlış olur — iş yapıldı, yalnızca özetlenmedi.
                 if not (content or "").strip():
+                    # Zayıf modeller araç sonucundan sonra boş yanıt vermeye
+                    # eğilimli. İlk boşlukta pes etmek işi yarıda bırakıyor;
+                    # bir kez dürtmek çoğu zaman devam ettiriyor. Bir kerelik,
+                    # yoksa boş-dürtme-boş döngüsü oluşur.
+                    if durtuldu < MAX_BOS_DURTME:
+                        durtuldu += 1
+                        working.pop()  # boş assistant mesajını geçmişe koyma
+                        turn_messages.pop()
+                        durtme = (
+                            "Araç çıktısı yukarıda. Şimdi ya sonucu birkaç cümleyle"
+                            " özetle ya da bir sonraki aracı çağır."
+                            if arac_calisti
+                            else "İsteği yerine getirmek için uygun aracı çağır."
+                        )
+                        working.append(dict(role="user", content=durtme))
+                        self.io.tool_warning("Model boş döndü, bir kez daha deneniyor.")
+                        continue
+
                     if arac_calisti:
                         self.io.tool_warning(
                             "Model sonucu özetlemedi. Araç çıktısı yukarıda."

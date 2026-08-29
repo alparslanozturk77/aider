@@ -2012,11 +2012,33 @@ class TestEmptyModelReply(unittest.TestCase):
         return coder
 
     def test_empty_reply_with_no_tools_warns_clearly(self):
-        coder = self._coder([FakeMessage(content="")])
+        # Boş yanıtta bir kez dürtülür; ikinci kez de boşsa uyarı basılır.
+        coder = self._coder([FakeMessage(content=""), FakeMessage(content="")])
         with patch.object(self.io, "tool_warning") as uyari:
             list(coder.send_message("bir şey yap"))
-        self.assertTrue(uyari.called)
-        self.assertIn("hiç araç çağırmadı", uyari.call_args[0][0])
+        metinler = [c[0][0] for c in uyari.call_args_list]
+        self.assertTrue(any("bir kez daha deneniyor" in m for m in metinler), metinler)
+        self.assertIn("hiç araç çağırmadı", metinler[-1])
+
+    def test_nudge_recovers_from_empty_reply(self):
+        # Asıl kazanç bu: zayıf model ilk turda boş dönüyor, dürtülünce
+        # devam ediyor. Eskiden döngü ilk boşlukta pes edip işi yarıda
+        # bırakıyordu.
+        coder = self._coder([FakeMessage(content=""), FakeMessage(content="Bitti: 19 paket")])
+        with patch.object(self.io, "tool_warning") as uyari:
+            list(coder.send_message("bir şey yap"))
+        metinler = [c[0][0] for c in uyari.call_args_list]
+        self.assertTrue(any("bir kez daha deneniyor" in m for m in metinler), metinler)
+        self.assertFalse(any("hiç araç çağırmadı" in m for m in metinler), metinler)
+        self.assertIn("Bitti: 19 paket", coder.partial_response_content)
+
+    def test_nudge_happens_only_once(self):
+        # Boş-dürtme-boş-dürtme döngüsüne dönmemeli.
+        coder = self._coder([FakeMessage(content="")] * 4)
+        with patch.object(self.io, "tool_warning") as uyari:
+            list(coder.send_message("bir şey yap"))
+        metinler = [c[0][0] for c in uyari.call_args_list]
+        self.assertEqual(sum("bir kez daha deneniyor" in m for m in metinler), 1, metinler)
 
     def test_empty_reply_after_tool_use_says_it_was_not_summarised(self):
         # Araç çalıştıysa "hiçbir şey yapmadı" demek yanlış olur; iş yapıldı,
@@ -2027,6 +2049,7 @@ class TestEmptyModelReply(unittest.TestCase):
                     tool_calls=[FakeToolCall("c1", "Glob", json.dumps({"pattern": "*"}))]
                 ),
                 FakeMessage(content=""),
+                FakeMessage(content=""),  # dürtmeden sonra da boş
             ]
         )
         with patch.object(self.io, "tool_warning") as uyari:
@@ -2036,7 +2059,7 @@ class TestEmptyModelReply(unittest.TestCase):
         self.assertFalse(any("hiç araç çağırmadı" in m for m in mesajlar), mesajlar)
 
     def test_whitespace_only_reply_also_warns(self):
-        coder = self._coder([FakeMessage(content="   \n  ")])
+        coder = self._coder([FakeMessage(content="   \n  "), FakeMessage(content="  ")])
         with patch.object(self.io, "tool_warning") as uyari:
             list(coder.send_message("bir şey yap"))
         self.assertTrue(uyari.called)
