@@ -143,7 +143,7 @@ geri koyabilecek kadar ayrıntılı.
 
 ## Beceriler
 
-`aider-skills/` altında 34 beceri var. Agent modunda model bunları
+`aider-skills/` altında 35 beceri var. Agent modunda model bunları
 kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 
 | Beceri | Ne zaman |
@@ -162,7 +162,8 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 | `ag-teshis` | Ağ, güvenlik duvarı, DNS, port erişimi |
 | `selinux` | AVC okuma, boolean, port etiketi, dosya bağlamı |
 | `depolama` | Disk dolması teşhisi, inode, yeri kim yiyor |
-| `disk-ekleme` | LVM, XFS büyütme, fstab, NFS mount |
+| `disk-ekleme` | LVM ve düz bölüm büyütme, XFS, fstab |
+| `nfs-mount` | NFS paylaşımı, fstab seçenekleri, asılı mount |
 | `sunucu-teslim` | Devralma, Satellite kaydı, güncelleme, teslim |
 | `satellite-yonetim` | hammer ping, içerik görünümü, depo senkronu |
 | `rhel-surumleri` | RHEL 7/8/9/10 komut ve yapılandırma farkları |
