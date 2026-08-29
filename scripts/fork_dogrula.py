@@ -404,7 +404,7 @@ def _check_tools_present():
     "kuralı yetkisiz komut geçirir.",
 )
 def _check_permission_escapes():
-    from aider.agent.permissions import ALLOW, PermissionSet
+    from aider.agent.permissions import ALLOW, ASK, DENY, PermissionSet
 
     p = PermissionSet(allow=["Bash(git diff:*)"], mode="ask")
 
@@ -425,11 +425,28 @@ def _check_permission_escapes():
         if auto.decide("Ssh", {"host": "s", "command": cmd}, True) == ALLOW:
             raise Fail(f"Ssh yerel reddi atlıyor: {cmd!r} oto modda onaylandı")
 
+    # Üç katman: yıkıcı olan asla, orta katman oto modda bile sorulur ama
+    # kullanıcının açık izniyle çalışır.
+    if auto.decide("Bash", {"command": "reboot"}, True) != ASK:
+        raise Fail("reboot oto modda sorulmuyor — orta katman kayıp")
+    if PermissionSet(mode="auto", allow=["Bash(reboot:*)"]).decide(
+        "Bash", {"command": "reboot"}, True
+    ) != ALLOW:
+        raise Fail("kullanıcının açık reboot izni işlemiyor")
+    if PermissionSet(mode="auto", allow=["Bash(rm -rf /*)"]).decide(
+        "Bash", {"command": "rm -rf /"}, True
+    ) != DENY:
+        raise Fail("yıkıcı komut kullanıcı izniyle açılabiliyor")
+
     # Yerleşik reddetme listesi auto modda da geçerli olmalı.
-    auto = PermissionSet(mode="auto")
-    for cmd in ["rm -rf /", "sudo rm x", "git push", "mkfs.ext4 /dev/sda"]:
-        if auto.decide("Bash", {"command": cmd}, True) != "deny":
+    for cmd in ["rm -rf /", "mkfs.ext4 /dev/sda", "dd if=/dev/zero of=/dev/sda"]:
+        if auto.decide("Bash", {"command": cmd}, True) != DENY:
             raise Fail(f"yerleşik deny listesi {cmd!r} komutunu engellemiyor")
+
+    # Orta katman auto modda otomatik onaylanmamalı.
+    for cmd in ["sudo rm x", "git push", "reboot", "shutdown -h now"]:
+        if auto.decide("Bash", {"command": cmd}, True) == ALLOW:
+            raise Fail(f"{cmd!r} oto modda sorulmadan onaylandı")
 
 
 @check(

@@ -232,10 +232,23 @@ allow:
 deny:
   - Bash(npm publish:*)
   - Bash(kubectl delete:*)
+
+ask:
+  - Bash(dnf install:*)
+  - Bash(systemctl restart:*)
 ```
 
-`allow` listesindeki çağrılar sorulmadan çalışır, `deny` listesindekiler
-sorulmadan engellenir. Reddetme her zaman izni yener — `auto` modda bile.
+Üç katman var ve sırası şu:
+
+| Katman | Anlamı | `auto` modda | Kullanıcı `allow` ile ezebilir mi |
+|---|---|---|---|
+| `deny` | Asla çalışmaz | engellenir | hayır |
+| `ask` | Sorulur, onaylanırsa çalışır | **sorulur** | evet |
+| `allow` | Sorulmadan çalışır | çalışır | — |
+
+`ask` katmanı "özel olarak söylenmedikçe yapılmasın, söylenirse yapılsın"
+gereksinimi içindir. `reboot` bunun tipik örneğidir: oto modda kendiliğinden
+sunucu yeniden başlatılmaz, ama sen istersen onaylayıp çalıştırırsın.
 
 Kurallar iki dosyadan birleştirilir: `~/.aider/permissions.yml` (kişisel) ve
 `<proje>/.aider/permissions.yml` (projeye özgü). Komut satırındaki
@@ -256,9 +269,24 @@ Kalıcı yapmak için dosyaya yazman gerekir.
 - **Sözcük sınırı.** `Bash(git diff:*)` kuralı `git diff-tree` komutunu
   kapsamaz; önek eşleşmesi boşlukta durur.
 
-Kaldırılamayan yerleşik bir reddetme listesi de var: `rm -rf /`, `sudo`,
-`mkfs*`, `dd if=*`, `git push`, `git reset --hard`, ve kabuğa boru
-(`curl ... | sh` kalıbı). Bunlar `auto` modda da engellenir.
+### Yerleşik listeler
+
+**Asla çalışmaz** (`allow` ile bile açılamaz): `rm -rf /*`, `rm -rf ~*`,
+`mkfs*`, `dd if=*`. Geri alınamaz ve felaketle sonuçlanır.
+
+**Oto modda bile sorulur** (ama `allow` ile açılabilir): `reboot`,
+`shutdown`, `init`, `sudo`, `doas`, `git push`, `git reset --hard`,
+`git clean -fdx`, ve kabuğa boru (`curl ... | sh` kalıbının `sh` parçası).
+
+### Uzak komutlar da kapsanır
+
+`Bash(...)` biçiminde yazılmış **reddetme ve sorma** kuralları `Ssh` ile
+gönderilen komutlara da uygulanır. Aksi hâlde `rm -rf /` yerelde yasakken
+sunucuda serbest kalırdı.
+
+Genişletme tek yönlüdür: `Bash(uptime:*)` **izni** `Ssh`'a geçmez. Reddi
+genişletmek güvenli tarafa düşer, izni genişletmek düşmez. Uzak komuta izin
+vermek istiyorsan kuralı açıkça `Ssh(uptime:*)` diye yaz.
 
 ## MCP
 

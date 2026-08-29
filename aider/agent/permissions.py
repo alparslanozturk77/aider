@@ -49,26 +49,39 @@ MODES = (MODE_PLAN, MODE_ASK, MODE_AUTO)
 # "mkfs.ext4" komutunu YAKALAMAZ. Alt komut adı noktayla ya da eşittir
 # işaretiyle devam eden komutlarda glob ('*') kullanmak gerekiyor.
 DEFAULT_DENY = [
-    # Geri alınamaz dosya silme
+    # Geri alınamaz ve felaketle sonuçlanan işlemler. Bunlar kullanıcı
+    # açıkça istese bile çalıştırılmaz; gerçekten gerekiyorsa kullanıcı
+    # komutu kendi kabuğunda çalıştırır.
     "Bash(rm -rf /*)",
     "Bash(rm -rf ~*)",
-    # Sistem düzeyi
-    "Bash(sudo:*)",
-    "Bash(doas:*)",
-    "Bash(shutdown:*)",
-    "Bash(reboot:*)",
     "Bash(mkfs*)",
     "Bash(dd if=*)",
+]
+
+# Auto modda BİLE onay istenen kalıplar. DEFAULT_DENY'den farkı: kullanıcı
+# "evet" derse çalışır. "Özel olarak söylenmedikçe yapılmasın, söylenirse
+# yapılsın" gereksiniminin karşılığı budur — reboot bunun tipik örneği.
+#
+# Kullanıcının kendi allow kuralı buradaki bir kalıbı ezebilir; sıra
+# decide() içinde açıkça allow -> default-ask şeklindedir.
+DEFAULT_ASK = [
+    # Makineyi kapatan/başlatan işlemler
+    "Bash(reboot:*)",
+    "Bash(shutdown:*)",
+    "Bash(init:*)",
+    # Yetki yükseltme
+    "Bash(sudo:*)",
+    "Bash(doas:*)",
+    # Kod tabanının dışına çıkan ya da geri alınamayan git işlemleri
+    "Bash(git push:*)",
+    "Bash(git reset --hard:*)",
+    "Bash(git clean -fdx:*)",
     # İnternetten indirip çalıştırma. Zincir parçalara ayrıldığı için
     # "curl x | sh" komutunda "sh" parçası burada yakalanır; argümanlı
     # "bash script.sh" ise tam eşleşme olmadığından etkilenmez.
     "Bash(sh)",
     "Bash(bash)",
     "Bash(zsh)",
-    # Kod tabanının dışına çıkan ya da geri alınamayan git işlemleri
-    "Bash(git push:*)",
-    "Bash(git reset --hard:*)",
-    "Bash(git clean -fdx:*)",
 ]
 
 
@@ -151,14 +164,16 @@ def _parse_rules(items, source):
 class PermissionSet:
     """Kural listelerini tutar ve bir araç çağrısı için karar üretir."""
 
-    def __init__(self, allow=None, deny=None, mode=MODE_ASK, use_default_deny=True):
+    def __init__(self, allow=None, deny=None, ask=None, mode=MODE_ASK, use_default_deny=True):
         if mode not in MODES:
             raise ValueError(f"geçersiz izin modu: {mode!r}. Geçerli: {', '.join(MODES)}")
         self.mode = mode
         self.allow = _parse_rules(allow, "allow")
         self.deny = _parse_rules(deny, "deny")
+        self.ask = _parse_rules(ask, "ask")
         if use_default_deny:
             self.deny += _parse_rules(DEFAULT_DENY, "varsayılan deny")
+            self.ask += _parse_rules(DEFAULT_ASK, "varsayılan ask")
 
     def add_session_allow(self, rule_text):
         """Kullanıcı 'bir daha sorma' dediğinde oturumluk kural ekle."""
@@ -178,6 +193,11 @@ class PermissionSet:
         for rule in self.allow:
             if self._rule_hits(rule, tool_name, args, require_all_parts=True):
                 return ALLOW
+
+        # Auto modu yenen ama kullanıcının açık iznine yenilen orta katman.
+        for rule in self.ask:
+            if self._rule_hits(rule, tool_name, args):
+                return ASK
 
         if self.mode == MODE_AUTO:
             return ALLOW
@@ -245,7 +265,9 @@ def suggest_rule(tool_name, args):
     return tool_name
 
 
-def load_permissions(project_root, mode=MODE_ASK, extra_allow=None, extra_deny=None):
+def load_permissions(
+    project_root, mode=MODE_ASK, extra_allow=None, extra_deny=None, extra_ask=None
+):
     """İzin kurallarını yapılandırma dosyalarından yükle.
 
     Aranan dosyalar, sonra gelen öncekine eklenir:
@@ -258,6 +280,11 @@ def load_permissions(project_root, mode=MODE_ASK, extra_allow=None, extra_deny=N
           - Bash(git diff:*)
         deny:
           - Bash(npm publish:*)
+        ask:
+          - Bash(dnf install:*)
+
+    'deny' asla çalıştırmaz. 'ask' auto modda bile onay ister ama kullanıcı
+    onaylarsa çalışır; 'allow' onu da ezer.
     """
     from pathlib import Path
 
@@ -265,6 +292,7 @@ def load_permissions(project_root, mode=MODE_ASK, extra_allow=None, extra_deny=N
 
     allow = list(extra_allow or [])
     deny = list(extra_deny or [])
+    ask = list(extra_ask or [])
     file_mode = None
 
     candidates = [
@@ -284,6 +312,7 @@ def load_permissions(project_root, mode=MODE_ASK, extra_allow=None, extra_deny=N
 
         allow += data.get("allow") or []
         deny += data.get("deny") or []
+        ask += data.get("ask") or []
         if data.get("mode"):
             file_mode = data["mode"]
 
@@ -291,4 +320,4 @@ def load_permissions(project_root, mode=MODE_ASK, extra_allow=None, extra_deny=N
     if mode == MODE_ASK and file_mode:
         mode = file_mode
 
-    return PermissionSet(allow=allow, deny=deny, mode=mode)
+    return PermissionSet(allow=allow, deny=deny, ask=ask, mode=mode)

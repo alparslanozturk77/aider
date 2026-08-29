@@ -28,7 +28,7 @@ aider/agent/
   registry.py     ToolRegistry, ToolContext, ToolError
   tools.py        Read, Write, Edit, Bash, Glob, Grep
   ssh_tool.py     Ssh — sunucu adını ~/.ssh/config'e karşı doğrular
-  permissions.py  Kural tabanlı izin sistemi (Bash reddi Ssh'ı da kapsar)
+  permissions.py  Üç katmanlı izin sistemi (deny / ask / allow)
   mcp.py          MCP istemcisi (stdio, JSON-RPC 2.0)
   skills.py       SKILL.md keşfi ve kademeli açılım
   todo.py         Görev listesi

@@ -74,3 +74,13 @@ deny:
   - Bash(docker push:*)
   - Bash(terraform apply:*)
   - Bash(kubectl delete:*)
+
+# Üçüncü katman: oto modda bile onay istenir, ama onaylarsan çalışır.
+# "Özel olarak söylenmedikçe yapılmasın" dediğin işler buraya.
+# Yerleşik liste zaten reboot, shutdown, sudo, git push ve 'curl | sh'
+# kalıplarını kapsıyor; aşağıdakiler ek örnek.
+#
+# ask:
+#   - Bash(dnf install:*)
+#   - Bash(systemctl restart:*)
+#   - Ssh(dnf -y upgrade:*)
