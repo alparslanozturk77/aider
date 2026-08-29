@@ -142,7 +142,7 @@ geri koyabilecek kadar ayrıntılı.
 
 ## Beceriler
 
-`aider-skills/` altında 29 beceri var. Agent modunda model bunları
+`aider-skills/` altında 30 beceri var. Agent modunda model bunları
 kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 
 | Beceri | Ne zaman |
@@ -172,7 +172,8 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 | `podman-docker` | Tek makinede konteyner: podman/docker, rootless, compose |
 | `nexus-registry` | Kurum registry'si: login, pull/push, save/load ile taşıma |
 | `servis-teshis` | PostgreSQL, Redis, RabbitMQ — konteyner tespiti dahil |
-| `web-sunucu` | Nginx, Apache, 502/504, TLS, SELinux |
+| `web-sunucu` | Nginx, Apache, 502/504, SELinux |
+| `sertifika-tls` | openssl: süre, SAN, zincir, kurumsal CA, starttls |
 | `rapor-uret` | CSV / Excel / PDF / HTML rapor üretimi |
 | `git-azuredevops` | Git, PR, pipeline, merge çakışması |
 | `belge-yaz` | README, runbook, mimari notu |

@@ -54,15 +54,13 @@ Neye bakılır:
 
 ## TLS
 
-```bash
-openssl s_client -connect localhost:443 -servername <alan> </dev/null 2>&1 | head -20
-openssl x509 -noout -enddate -subject -issuer -in <cert>
-openssl x509 -noout -text -in <cert> | grep -A1 "Subject Alternative Name"
-```
+Sertifika sorunları için `sertifika-tls` becerisine geç — süre, SAN eşleşmesi,
+zincir eksikliği ve kurumsal CA güveni orada. Hızlı bakış:
 
-Sık hata: sertifika geçerli ama **SAN listesinde istenen alan adı yok** ya da
-ara sertifika (chain) eksik. `s_client` çıktısında `verify error:num=20`
-(unable to get local issuer) chain eksikliğini gösterir.
+```bash
+echo | openssl s_client -connect localhost:443 -servername <alan> 2>/dev/null \
+  | openssl x509 -noout -subject -dates -ext subjectAltName
+```
 
 ## SELinux — RHEL'de sık suçlu
 
