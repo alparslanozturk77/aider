@@ -25,6 +25,13 @@ _CHAIN = re.compile(r"&&|\|\||;|(?<!\|)\|(?!\|)")
 # olarak değerlendirilemez.
 _SUBSTITUTION = re.compile(r"\$\(|`|<\(")
 
+# Komut çalıştıran araçlar: kural deseni dosya yoluna değil komuta uygulanır.
+COMMAND_TOOLS = ("Bash", "Ssh")
+
+# Uzakta komut çalıştıranlar. Bunlarda yerel Bash(...) reddetme kuralları da
+# geçerlidir; bkz. PermissionSet._rule_hits.
+REMOTE_TOOLS = ("Ssh",)
+
 ALLOW = "allow"
 DENY = "deny"
 ASK = "ask"
@@ -82,7 +89,7 @@ class Rule:
         if self.pattern is None:
             return True
 
-        if tool_name == "Bash":
+        if tool_name in COMMAND_TOOLS:
             return self._match_command(args.get("command", ""))
 
         # Yol tabanlı araçlar: deseni dosya yoluna uygula.
@@ -179,8 +186,20 @@ class PermissionSet:
 
     def _rule_hits(self, rule, tool_name, args, require_all_parts=False):
         """Kuralı çağrıya uygula; kabuk zincirlerini parça parça değerlendir."""
-        if tool_name != "Bash":
+        if tool_name not in COMMAND_TOOLS:
             return rule.matches(tool_name, args)
+
+        # Bir Bash(...) reddi uzak kabuğu da kapsamalı. "rm -rf /" yerelde
+        # yasakken Ssh üzerinden serbest kalırsa yasak hiçbir şey ifade etmez;
+        # oto modda bu, tek bir araç çağrısıyla sunucu silmek demekti.
+        # Yalnızca REDDETME yönünde genişletiyoruz: izni genişletmek güvenli
+        # değil, reddi genişletmek her zaman güvenli taraf.
+        if rule.tool != tool_name:
+            if require_all_parts or tool_name not in REMOTE_TOOLS:
+                return False
+            if rule.tool != "Bash":
+                return False
+            tool_name = "Bash"
 
         command = args.get("command", "")
 

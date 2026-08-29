@@ -776,6 +776,43 @@ class TestSuggestRule(unittest.TestCase):
         self.assertEqual(suggest_rule("Write", {"file_path": "a.py"}), "Write")
 
 
+class TestSshUsesBashDenyRules(unittest.TestCase):
+    """Uzak kabuk yerel yasakları atlamamalı.
+
+    Bulundugu hâliyle Bash(rm -rf /*) reddi yalnizca yerel Bash'e uygulaniyordu;
+    ayni komut Ssh ile gonderilince oto modda ALLOW donuyordu. Yani "rm -rf /"
+    yasagi sunucularda hicbir sey ifade etmiyordu.
+    """
+
+    def setUp(self):
+        self.auto = PermissionSet(mode=MODE_AUTO)
+
+    def _ssh(self, command):
+        return self.auto.decide("Ssh", {"host": "sunucu", "command": command}, True)
+
+    def test_default_denies_apply_to_remote_commands(self):
+        for komut in ("rm -rf /", "sudo reboot", "mkfs.ext4 /dev/sdb", "shutdown -h now"):
+            with self.subTest(komut=komut):
+                self.assertEqual(self._ssh(komut), DENY)
+
+    def test_remote_chain_cannot_smuggle_denied_command(self):
+        self.assertEqual(self._ssh("uptime && sudo reboot"), DENY)
+        self.assertEqual(self._ssh("uptime; rm -rf /"), DENY)
+
+    def test_harmless_remote_command_still_runs_in_auto(self):
+        self.assertEqual(self._ssh("uptime"), ALLOW)
+
+    def test_bash_allow_does_not_leak_to_ssh(self):
+        # Reddi genisletmek guvenli, izni genisletmek degil. Yerelde izin
+        # verilen bir komut uzakta sessizce izinli sayilmamali.
+        p = PermissionSet(allow=["Bash(uptime:*)"], mode=MODE_ASK)
+        self.assertEqual(p.decide("Ssh", {"host": "s", "command": "uptime"}, True), ASK)
+
+    def test_explicit_ssh_rule_still_works(self):
+        p = PermissionSet(allow=["Ssh(uptime:*)"], mode=MODE_ASK)
+        self.assertEqual(p.decide("Ssh", {"host": "s", "command": "uptime"}, True), ALLOW)
+
+
 class TestPermissionConfigLoading(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

@@ -418,6 +418,13 @@ def _check_permission_escapes():
         if p.decide("Bash", {"command": cmd}, True) == ALLOW:
             raise Fail(f"{adi} kaçışı AÇIK: {cmd!r} otomatik onaylandı")
 
+    # Uzak kabuk yerel yasakları atlamamalı: Bash(rm -rf /*) reddi Ssh ile
+    # gönderilen komutu da kapsamalı, yoksa yasak sunucularda anlamsız kalır.
+    auto = PermissionSet(mode="auto")
+    for cmd in ("rm -rf /", "sudo reboot", "mkfs.ext4 /dev/sdb", "uptime && sudo reboot"):
+        if auto.decide("Ssh", {"host": "s", "command": cmd}, True) == ALLOW:
+            raise Fail(f"Ssh yerel reddi atlıyor: {cmd!r} oto modda onaylandı")
+
     # Yerleşik reddetme listesi auto modda da geçerli olmalı.
     auto = PermissionSet(mode="auto")
     for cmd in ["rm -rf /", "sudo rm x", "git push", "mkfs.ext4 /dev/sda"]:
