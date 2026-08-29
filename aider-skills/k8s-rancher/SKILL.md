@@ -1,6 +1,6 @@
 ---
 name: k8s-rancher
-description: Kubernetes ve Rancher üzerinde sorun ararken kullan — pod, deployment, node, namespace, log, event. Az sayıda sunucudaki docker/docker-compose için de geçerli. "kubernetes", "k8s", "rancher", "pod", "kubectl", "deployment", "node", "container", "docker" isteklerinde tetiklenir.
+description: Kubernetes ve Rancher üzerinde sorun ararken kullan — pod, deployment, node, namespace, log, event. "kubernetes", "k8s", "rancher", "pod", "kubectl", "deployment", "node", "namespace" isteklerinde tetiklenir. Küme dışı tek makinedeki konteynerler için `podman-docker`.
 ---
 
 ## Önce hangi kümedesin
@@ -21,7 +21,7 @@ aradığın şey orada olmayabilir. Bilmiyorsan `-A` ile tüm namespace'lere bak
 
 ## Salt-okunur teşhis
 
-Bu komutlar hiçbir şeyi değiştirmez, serbestçe kullan:
+Hiçbiri bir şeyi değiştirmez:
 
 ```bash
 kubectl get pods -A                      # genel tablo
@@ -31,12 +31,15 @@ kubectl get nodes -o wide
 kubectl describe pod <pod> -n <ns>       # en bilgilendirici tek komut
 kubectl logs <pod> -n <ns> --tail=200
 kubectl logs <pod> -n <ns> --previous    # çökmeden önceki kap
-kubectl get events -n <ns> --sort-by=.lastTimestamp
-kubectl top nodes ; kubectl top pods -n <ns>
+kubectl events -n <ns>                   # zamana göre sıralı
+kubectl top nodes ; kubectl top pods -n <ns>   # metrics-server gerekir
 ```
 
-`kubectl get events --sort-by=.lastTimestamp` en çok atlanan ve en çok işe
-yarayan komuttur. Pod açıklanamayan bir durumdaysa önce olaylara bak.
+Olaylar en çok atlanan ve en çok işe yarayan yerdir; pod açıklanamayan bir
+durumdaysa önce oraya bak. `kubectl events` ayrı bir alt komuttur (istemci
+v1.36.1'de var), zamana göre sıralar, `--for pod/<ad>` ile daraltılır. Eski
+`get events --sort-by=.lastTimestamp` da çalışır ama `events.k8s.io/v1` ile
+üretilen olaylarda o alan boş kalıp sıralamayı yanıltabilir.
 
 Log alırken `--tail` **her zaman** ver. Sınırsız log bağlamı doldurur.
 
@@ -64,8 +67,8 @@ hazır olmadığı demektir; readiness probe başarısız olabilir.
 - `cattle-system` namespace'i Rancher ajanlarını barındırır
   (`cattle-cluster-agent`, `cattle-node-agent`). Küme "unavailable"
   görünüyorsa bu podların loglarına bak.
-- Rancher CLI (`rancher`) kurulumdan kuruluma değişir. Kullanacaksan önce
-  `rancher --help` çıktısını oku, ezberden komut yazma.
+- Rancher CLI (`rancher`) kurulumdan kuruluma değişir. Önce `rancher --help`
+  çıktısını oku, ezberden komut yazma.
 
 ## Yan etkili komutlar — onaysız çalıştırma
 
@@ -79,51 +82,21 @@ kubectl rollout restart       tüm podları yeniden başlatır
 kubectl exec ... -- <komut>   kap içinde komut çalıştırır
 ```
 
-`kubectl delete pod` çoğu zaman "zararsız" sanılır — deployment onu yeniden
-oluşturur. Ama StatefulSet'te veri kaybına, tek replikalı serviste kesintiye
-yol açar. Silmeden önce ne tarafından yönetildiğine bak.
+`kubectl delete pod` "zararsız" sanılır — deployment onu yeniden oluşturur.
+Ama StatefulSet'te veri kaybına, tek replikalı serviste kesintiye yol açar.
+Silmeden önce ne tarafından yönetildiğine bak.
 
-Bir şeyi değiştirmen istendiğinde önce `--dry-run=server` ile göster:
+Değişiklik istendiğinde önce `--dry-run=server` ile göster:
 
 ```bash
 kubectl apply -f x.yaml --dry-run=server
 kubectl diff -f x.yaml
 ```
 
-## Podman ve Docker
+## Konteyner çalışma zamanı
 
-**RHEL / AlmaLinux / Rocky üzerinde varsayılan `podman`'dır, `docker` genelde
-kurulu DEĞİLDİR** (doğrulandı: AlmaLinux 10.2'de podman var, docker yok).
-Önce hangisinin olduğuna bak:
-
-```bash
-command -v podman docker
-```
-
-Komutlar büyük ölçüde aynı; `docker` yerine `podman` yaz:
-
-```bash
-podman ps -a                       # çıkmış kaplar da görünür
-podman logs --tail 200 <kap>
-podman inspect <kap>
-podman stats --no-stream
-podman system df                   # imaj/volume disk kullanımı
-podman-compose ps                  # compose ayrı paket
-```
-
-Docker varsa aynı komutlar `docker` önekiyle, compose için `docker compose`.
-
-Podman'a özgü iki not: kapsayıcılar kök olmadan (rootless) çalışabilir, o
-zaman `podman ps` kullanıcı bazlıdır — başka kullanıcının kapsayıcısını
-görmezsin. Ve `systemctl --user` altında Quadlet birimleri olabilir:
-
-```bash
-systemctl --user list-units 'podman*'
-```
-
-Yan etkili: `podman rm`, `podman rmi`, `podman system prune` (bu sonuncusu
-kullanılmayan volume'ları da silebilir — veri kaybı riski), `podman-compose
-down` (`-v` ile volume'ları da siler). Docker karşılıkları aynı.
+Küme dışı, tek makinedeki konteynerler için `podman-docker` becerisine geç.
+RHEL ailesinde varsayılan `podman`'dır; `docker` genelde kurulu değildir.
 
 ## Raporlama
 

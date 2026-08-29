@@ -142,7 +142,7 @@ geri koyabilecek kadar ayrıntılı.
 
 ## Beceriler
 
-`aider-skills/` altında 27 beceri var. Agent modunda model bunları
+`aider-skills/` altında 28 beceri var. Agent modunda model bunları
 kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 
 | Beceri | Ne zaman |
@@ -168,7 +168,8 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 | `sssd-adtrust` | AD trust hesapları login olamıyor — runbook |
 | `splunk-forwarder` | Forwarder takıldı, log akmıyor — runbook |
 | `performans` | Yük, CPU/bellek/disk darboğazı, log okuma |
-| `k8s-rancher` | Kubernetes/Rancher teşhisi, docker |
+| `k8s-rancher` | Kubernetes/Rancher teşhisi |
+| `podman-docker` | Tek makinede konteyner: podman/docker, rootless, compose |
 | `servis-teshis` | PostgreSQL, Redis, RabbitMQ — konteyner tespiti dahil |
 | `web-sunucu` | Nginx, Apache, 502/504, TLS, SELinux |
 | `rapor-uret` | CSV / Excel / PDF / HTML rapor üretimi |
