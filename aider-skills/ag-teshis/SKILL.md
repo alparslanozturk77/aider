@@ -99,9 +99,33 @@ tracepath -n <hedef>              # traceroute minimal kurulumda yok
 ## 6. Uzak uçtan bakış
 
 ```bash
-nc -zv -w 5 <sunucu> <port>
-curl -sS -m 5 -o /dev/null -w '%{http_code}\n' http://<sunucu>:<port>/
+nc -zv -w 5 <sunucu> <port>              # tek port
+nc -zv -w 2 <sunucu> 80 443 8080         # birden çok port
+for p in 88 389 443 636; do              # aralık/liste, hangisi açık
+  nc -z -w 2 <sunucu> $p && echo "$p açık" || echo "$p KAPALI"
+done
 ```
+
+`-w` şart: zaman aşımı vermezsen kapalı portta uzun süre bekler.
+
+**Güvenlik duvarı izni doğrularken yönü karıştırma.** Portun *hedefte* açık
+olması yetmez; senin çıkışın da açık olmalı. İki taraftan da dene:
+
+```bash
+# istemciden hedefe
+nc -zv -w 5 <hedef> <port>
+# hedefte dinleyen var mı (hedefte çalıştır)
+ss -tlnp | grep <port>
+```
+
+`nc` yoksa alternatifler:
+
+```bash
+timeout 5 bash -c "</dev/tcp/<sunucu>/<port>" && echo açık || echo kapalı
+curl -sS -m 5 telnet://<sunucu>:<port> </dev/null
+```
+
+Birincisi bash'in kendi özelliği, ek paket gerektirmez.
 
 Hata mesajını ayırt et:
 

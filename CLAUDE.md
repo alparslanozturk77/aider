@@ -160,6 +160,8 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 | `depolama` | Disk dolması, LVM, mount |
 | `rhel-surumleri` | RHEL 7/8/9/10 komut ve yapılandırma farkları |
 | `guvenlik-ajani` | SEP / Cortex XDR keşif yordamı |
+| `idm-yonetim` | IdM/FreeIPA istemci kurulumu, Kerberos, SSSD |
+| `performans` | Yük, CPU/bellek/disk darboğazı, log okuma |
 | `k8s-rancher` | Kubernetes/Rancher teşhisi, docker |
 | `servis-teshis` | PostgreSQL, Redis, RabbitMQ, Nginx, Apache |
 | `rapor-uret` | CSV / Excel / PDF / HTML rapor üretimi |
