@@ -143,7 +143,7 @@ geri koyabilecek kadar ayrıntılı.
 
 ## Beceriler
 
-`aider-skills/` altında 32 beceri var. Agent modunda model bunları
+`aider-skills/` altında 33 beceri var. Agent modunda model bunları
 kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 
 | Beceri | Ne zaman |
@@ -165,6 +165,7 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 | `sunucu-teslim` | Devralma, Satellite kaydı, güncelleme, teslim |
 | `satellite-yonetim` | hammer ping, içerik görünümü, depo senkronu |
 | `rhel-surumleri` | RHEL 7/8/9/10 komut ve yapılandırma farkları |
+| `solaris-ldom` | Solaris 11 ve LDOM — keşif yordamı, doğrulanmadı |
 | `guvenlik-ajani` | SEP / Cortex XDR keşif yordamı |
 | `idm-yonetim` | IdM/FreeIPA istemci kurulumu, Kerberos, SSSD |
 | `sssd-adtrust` | AD trust hesapları login olamıyor — runbook |

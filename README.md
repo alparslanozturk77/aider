@@ -1,8 +1,13 @@
 # aider-agent
 
-[Aider](https://github.com/Aider-AI/aider)'ın forku. Amaç aider'ı geliştirmek
-değil, **kurum içi, çevrimdışı bir OpenAI uyumlu endpoint'te (Qwen) çalışan,
-Claude Code benzeri bir ajana dönüştürmek.**
+[Aider](https://github.com/Aider-AI/aider)'ın forku. Upstream aider kod
+yazmak için tasarlandı; bu fork onu **sistem yönetimi ajanına** dönüştürüyor:
+kurum içi, çevrimdışı bir OpenAI uyumlu endpoint'te (Qwen) çalışan, Claude
+Code benzeri bir araç döngüsü.
+
+Hedef ortam bir bankanın sunucu filosu: ağırlıkla **RHEL**, yanında birkaç
+**Solaris 11 / LDOM**. Kod düzenleme yeteneği duruyor ama asıl iş sunucuya
+bağlanmak, ölçmek, teşhis koymak ve raporlamak.
 
 Fork noktası: upstream `5dc9490` (aider 0.86.3.dev).
 Upstream'in kendi README'si: [`ORIJINAL-README.md`](ORIJINAL-README.md)
@@ -47,23 +52,25 @@ Sonra program içinden endpoint'i tanımla:
 
 ## Beceriler
 
-`aider-skills/` altında 32 beceri var. Sistem promptuna yalnızca
+`aider-skills/` altında 33 beceri var. Sistem promptuna yalnızca
 `ad: açıklama` satırı girer; gövde model isteyince yüklenir, dolayısıyla
 beceri sayısı bağlam maliyeti yaratmaz.
+
+Sistem yönetimi (asıl kullanım): RHEL yönetimi ve sürüm farkları, ağ
+teşhisi, SELinux, TLS sertifikaları, depolama ve disk ekleme (LVM/XFS),
+performans ve log okuma, servis teşhisi (PostgreSQL/Redis/RabbitMQ), web
+sunucusu, podman/docker, kurum registry'si (Nexus), Kubernetes/Rancher,
+Satellite, sunucu teslimi, IdM, SSSD AD-trust, Splunk forwarder, güvenlik
+ajanı keşfi, Solaris 11 / LDOM, rapor üretimi (CSV/HTML/xlsx/PDF).
 
 Kod tarafı: kod inceleme, test yazma, güvenlik incelemesi, sadeleştirme,
 hata ayıklama, beceri yazma ve geliştirme, MCP ekleme, upstream birleştirme,
 belge yazma, git/AzureDevOps.
 
-Sistem yönetimi: RHEL sürüm farkları, ağ teşhisi, SELinux, TLS sertifikaları,
-depolama ve disk ekleme, performans, servis teşhisi (PostgreSQL/Redis/
-RabbitMQ), web sunucusu, podman/docker, kurum registry'si, Kubernetes/Rancher,
-Satellite, sunucu teslimi, IdM, SSSD AD-trust, Splunk forwarder, güvenlik
-ajanı keşfi, rapor üretimi.
-
 Becerilerdeki komutlar hafızadan yazılmadı; gerçek bir RHEL ailesi sunucuda
-çalıştırılarak doğrulandı. Doğrulanamayan ürünler için komut referansı değil
-**keşif yordamı** yazıldı.
+çalıştırılarak doğrulandı. Doğrulanamayan ortamlar için — Solaris, Satellite,
+Rancher — komut referansı değil **keşif yordamı** yazıldı ve doğrulanmadığı
+becerinin içinde açıkça belirtildi.
 
 Yeni beceri: `/skills new <ad>`
 

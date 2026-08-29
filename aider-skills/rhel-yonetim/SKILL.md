@@ -3,6 +3,17 @@ name: rhel-yonetim
 description: RHEL sunucularda sistem yönetimi yaparken kullan — servis, log, paket, abonelik, Satellite (hammer), IdM (ipa). "servis", "systemctl", "journalctl", "dnf", "satellite", "hammer", "ipa", "idm", "abonelik", "yama", "repo" isteklerinde tetiklenir.
 ---
 
+## Önce: gerçekten Linux mu
+
+Filoda birkaç Solaris 11 sunucu var. Uzak bir sunucuda ilk komut:
+
+```bash
+uname -s        # Linux | SunOS
+```
+
+`SunOS` dönerse buradaki komutların çoğu geçersizdir — `solaris-ldom`
+becerisine geç.
+
 ## Bilmediğin komutu uydurma
 
 Bu ortam çevrimdışı: bir aracın sözdizimini arayamazsın. `hammer`, `ipa` ve
