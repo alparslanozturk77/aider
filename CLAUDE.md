@@ -143,7 +143,7 @@ geri koyabilecek kadar ayrıntılı.
 
 ## Beceriler
 
-`aider-skills/` altında 33 beceri var. Agent modunda model bunları
+`aider-skills/` altında 34 beceri var. Agent modunda model bunları
 kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 
 | Beceri | Ne zaman |
@@ -158,6 +158,7 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 | `mcp-ekle` | MCP sunucusu ekleme, teşhis, çevrimdışı kurulum |
 | `upstream-birlestir` | Upstream'den güncelleme |
 | `rhel-yonetim` | RHEL sistem yönetimi, Satellite, IdM |
+| `ansible` | Envanter doğrulama, ad-hoc, playbook, kuru çalıştırma |
 | `ag-teshis` | Ağ, güvenlik duvarı, DNS, port erişimi |
 | `selinux` | AVC okuma, boolean, port etiketi, dosya bağlamı |
 | `depolama` | Disk dolması teşhisi, inode, yeri kim yiyor |
