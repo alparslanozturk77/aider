@@ -547,24 +547,34 @@ class InputOutput:
             ]
             show = self.format_files_for_input(rel_fnames, rel_read_only_fnames)
 
-        prompt_prefix = ""
-        if edit_format:
-            prompt_prefix += edit_format
         # Agent modunda mevcut izin modu prompt'un icinde durur. Alt bilgi
         # cubugu (bottom_toolbar) denendi ve terminali raw modda birakip
         # merdiven etkisi yaptigi icin geri alindi; prompt oneki aider'in
         # zaten dogru cizdigi tek yer.
-        if self.agent_status:
-            try:
-                prompt_prefix += " " + self.agent_status()
-            except Exception:
-                pass
-        if self.multiline_mode:
-            prompt_prefix += (" " if edit_format else "") + "multi"
-        prompt_prefix += "> "
+        def build_prompt_prefix():
+            prefix = ""
+            if edit_format:
+                prefix += edit_format
+            if self.agent_status:
+                try:
+                    prefix += " " + self.agent_status()
+                except Exception:
+                    pass
+            if self.multiline_mode:
+                prefix += (" " if edit_format else "") + "multi"
+            prefix += "> "
+            self.prompt_prefix = prefix
+            return prefix
 
-        show += prompt_prefix
-        self.prompt_prefix = prompt_prefix
+        show_files = show
+        show += build_prompt_prefix()
+
+        # prompt_toolkit'e sabit dizge yerine cagrilabilir veriyoruz: mesaj
+        # her cizimde yeniden hesaplanir. Sabit dizgeyle shift+tab modu
+        # degistiriyor ama invalidate() ayni metni yeniden ciziyor ve degisim
+        # ekranda ancak bir sonraki prompt'ta goruluyordu.
+        def get_prompt_message():
+            return show_files + build_prompt_prefix()
 
         inp = ""
         multiline_input = False
@@ -675,7 +685,7 @@ class InputOutput:
                         return self.prompt_prefix
 
                     line = self.prompt_session.prompt(
-                        show,
+                        get_prompt_message,
                         default=default,
                         completer=completer_instance,
                         reserve_space_for_menu=4,

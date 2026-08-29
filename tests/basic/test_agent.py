@@ -1570,6 +1570,32 @@ class TestStatusBarAndModeCycle(unittest.TestCase):
         self.assertIsNone(io.agent_status)
         self.assertIsNone(io.agent_cycle_mode)
 
+    def test_prompt_message_is_callable_and_follows_mode(self):
+        # shift+tab modu degistirdiginde ekranin ANINDA guncellenmesi icin
+        # prompt mesaji sabit dizge degil cagrilabilir olmali. Sabit dizgeyle
+        # invalidate() ayni metni yeniden ciziyor ve degisim bir sonraki
+        # prompt'a kadar gorunmuyordu.
+        from unittest.mock import MagicMock, patch
+
+        io = self.io
+        io.fancy_input = True
+        io.prompt_session = MagicMock()
+        io.prompt_session.prompt.return_value = ""
+
+        with patch.object(io, "_get_style", return_value=None):
+            io.get_input("/tmp", [], [], None, edit_format="agent")
+
+        mesaj = io.prompt_session.prompt.call_args[0][0]
+        self.assertTrue(callable(mesaj), "prompt mesaji cagrilabilir olmali")
+
+        onceki = mesaj()
+        self.assertIn(self.coder._status_text(), onceki)
+
+        self.coder.cycle_mode()
+        sonraki = mesaj()
+        self.assertNotEqual(onceki, sonraki, "mod degisti ama mesaj ayni kaldi")
+        self.assertIn(self.coder._status_text(), sonraki)
+
     def test_cycle_visits_every_mode_and_returns(self):
         gorulen = []
         for _ in range(len(self.coder.MODE_CYCLE)):

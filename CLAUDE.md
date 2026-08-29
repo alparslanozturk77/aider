@@ -214,9 +214,15 @@ modda bırakıp merdiven etkisi yapıyordu — her satır bir öncekinin bittiğ
 sütundan başlıyordu. Prompt öneki aider'in zaten doğru çizdiği tek yer;
 oraya yazmak hem sağlam hem her zaman görünür.
 
-Upstream'e dokunuş `io.py`'de iki nokta: `agent_status` / `agent_cycle_mode`
-kancaları ve prompt önekine eklenen tek satır. İkisi de diğer coder'larda
+Upstream'e dokunuş `io.py`'de üç nokta: `agent_status` / `agent_cycle_mode`
+kancaları, prompt önekini üreten `build_prompt_prefix()` ve prompt mesajının
+**sabit dizge yerine çağrılabilir** verilmesi. İlk ikisi diğer coder'larda
 `None` kalır.
+
+Üçüncüsü şart: mesaj sabit dizgeyse `shift+tab` modu değiştiriyor ama
+`invalidate()` aynı metni yeniden çiziyor ve değişim ekranda ancak bir
+sonraki prompt'ta görünüyor. `test_prompt_message_is_callable_and_follows_mode`
+bunu koruyor.
 
 ## Bellek ve proje talimatları
 
