@@ -158,6 +158,8 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 | `rhel-yonetim` | RHEL sistem yönetimi, Satellite, IdM |
 | `ag-teshis` | Ağ, güvenlik duvarı, SELinux |
 | `depolama` | Disk dolması, LVM, mount |
+| `rhel-surumleri` | RHEL 7/8/9/10 komut ve yapılandırma farkları |
+| `guvenlik-ajani` | SEP / Cortex XDR keşif yordamı |
 | `k8s-rancher` | Kubernetes/Rancher teşhisi, docker |
 | `servis-teshis` | PostgreSQL, Redis, RabbitMQ, Nginx, Apache |
 | `rapor-uret` | CSV / Excel / PDF / HTML rapor üretimi |
