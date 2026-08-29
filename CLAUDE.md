@@ -142,7 +142,7 @@ geri koyabilecek kadar ayrıntılı.
 
 ## Beceriler
 
-`aider-skills/` altında 28 beceri var. Agent modunda model bunları
+`aider-skills/` altında 29 beceri var. Agent modunda model bunları
 kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 
 | Beceri | Ne zaman |
@@ -170,6 +170,7 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 | `performans` | Yük, CPU/bellek/disk darboğazı, log okuma |
 | `k8s-rancher` | Kubernetes/Rancher teşhisi |
 | `podman-docker` | Tek makinede konteyner: podman/docker, rootless, compose |
+| `nexus-registry` | Kurum registry'si: login, pull/push, save/load ile taşıma |
 | `servis-teshis` | PostgreSQL, Redis, RabbitMQ — konteyner tespiti dahil |
 | `web-sunucu` | Nginx, Apache, 502/504, TLS, SELinux |
 | `rapor-uret` | CSV / Excel / PDF / HTML rapor üretimi |

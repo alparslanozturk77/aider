@@ -87,6 +87,8 @@ response" der — unix soketi kabın içindedir. Bunların hiçbiri servisin
 kapalı olduğu anlamına gelmez.
 
 Veri servisleri için `servis-teshis`, nginx/apache için `web-sunucu`.
+Kurum registry'sinden imaj çekme/gönderme ve çevrimdışı taşıma için
+`nexus-registry`.
 
 ## Yan etkili — onaysız çalıştırma
 
