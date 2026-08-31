@@ -1,5 +1,9 @@
 """Araç izin sistemi: kural tabanlı otomatik onay, reddetme ve soru sorma.
 
+DEFAULT_ASK ve DEFAULT_DENY kuralları `Bash(...)` yazılsa bile uzak kabuğu
+(`Ssh`) da kapsar; bkz. PermissionSet._rule_hits. Yani "ansible-playbook oto
+modda bile sorulsun" kuralı sunucuda çalıştırılan ansible için de geçerli.
+
 Kural sözdizimi Claude Code'un settings.json izinlerine benzer:
 
     Read                    -> Read aracının her çağrısı
@@ -82,6 +86,27 @@ DEFAULT_ASK = [
     "Bash(sh)",
     "Bash(bash)",
     "Bash(zsh)",
+    # --- Tek makineyi değil FİLOYU etkileyenler ---------------------------
+    # ansible-playbook'ta --limit yoksa envanterin tamamına dokunur. Oto
+    # modda bu, tek bir araç çağrısıyla yüzlerce sunucuyu değiştirmek
+    # demekti. ansible becerisi bunu zaten "önce --list-hosts, sonra
+    # --check" diye anlatıyor; kural o disiplini zorunlu kılıyor.
+    "Bash(ansible-playbook:*)",
+    "Bash(ansible:*)",
+    # --- Sunucu durumunu değiştirenler ------------------------------------
+    # Paket kurma/kaldırma ve servis durdurma geri alınabilir ama üretimde
+    # kesinti demek. Salt-okunur olanlar (dnf list, systemctl status,
+    # is-active) kapsam dışı: onlar bu öneklere uymuyor.
+    "Bash(dnf install:*)",
+    "Bash(dnf remove:*)",
+    "Bash(dnf update:*)",
+    "Bash(dnf upgrade:*)",
+    "Bash(yum install:*)",
+    "Bash(yum remove:*)",
+    "Bash(yum update:*)",
+    "Bash(systemctl stop:*)",
+    "Bash(systemctl restart:*)",
+    "Bash(systemctl disable:*)",
 ]
 
 

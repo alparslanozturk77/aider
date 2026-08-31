@@ -501,9 +501,22 @@ Kalıcı yapmak için dosyaya yazman gerekir.
 **Asla çalışmaz** (`allow` ile bile açılamaz): `rm -rf /*`, `rm -rf ~*`,
 `mkfs*`, `dd if=*`. Geri alınamaz ve felaketle sonuçlanır.
 
-**Oto modda bile sorulur** (ama `allow` ile açılabilir): `reboot`,
-`shutdown`, `init`, `sudo`, `doas`, `git push`, `git reset --hard`,
-`git clean -fdx`, ve kabuğa boru (`curl ... | sh` kalıbının `sh` parçası).
+**Oto modda bile sorulur** (ama `allow` ile açılabilir):
+
+| Kalıp | Neden |
+|---|---|
+| `reboot`, `shutdown`, `init` | makineyi kapatır |
+| `sudo`, `doas` | yetki yükseltir |
+| `git push`, `git reset --hard`, `git clean -fdx` | geri alınamaz ya da dışarı çıkar |
+| `sh`, `bash`, `zsh` (tam eşleşme) | `curl ... \| sh` kalıbının kabuk parçası |
+| `ansible-playbook`, `ansible` | **`--limit` yoksa envanterin tamamına dokunur** |
+| `dnf/yum install\|remove\|update`, `systemctl stop\|restart\|disable` | üretimde kesinti |
+
+Son iki satır tek makineyi değil filoyu ilgilendiriyor: oto modda tek bir
+araç çağrısı yüzlerce sunucuyu değiştirebilirdi. Salt-okunur karşılıkları
+(`dnf list`, `systemctl status`, `systemctl is-active`, `ansible-inventory`,
+`ansible-doc`) kapsam dışı — önek eşleşmesi sözcük sınırı aradığı için
+`ansible-doc`, `ansible` kuralına takılmıyor.
 
 ### Uzak komutlar da kapsanır
 

@@ -1393,11 +1393,15 @@ class TestPrefixVersusGlob(unittest.TestCase):
         p = PermissionSet(mode=MODE_AUTO)
         self.assertEqual(p.decide("Bash", {"command": "mkfs.ext4 /dev/sda"}, True), DENY)
 
+    # Bu iki test kuralın GENİŞLİĞİNİ ölçüyor, yani "reddedildi mi". Eşleşmeyen
+    # durumun sonucu ALLOW değil ASK: ansible-playbook artık DEFAULT_ASK'te,
+    # oto modda bile onay istiyor. Ölçülen şey reddetmenin sızıp sızmadığı.
+
     def test_path_prefix_needs_glob_not_colon_star(self):
         cmd = "ansible-playbook -i envanter/hosts.yml playbooks/duzelt_ntp.yml"
 
         colon = PermissionSet(deny=["Bash(ansible-playbook*playbooks/duzelt_:*)"], mode=MODE_AUTO)
-        self.assertEqual(colon.decide("Bash", {"command": cmd}, True), ALLOW)
+        self.assertNotEqual(colon.decide("Bash", {"command": cmd}, True), DENY)
 
         glob = PermissionSet(deny=["Bash(ansible-playbook*playbooks/duzelt_*)"], mode=MODE_AUTO)
         self.assertEqual(glob.decide("Bash", {"command": cmd}, True), DENY)
@@ -1405,10 +1409,10 @@ class TestPrefixVersusGlob(unittest.TestCase):
     def test_glob_rule_is_not_over_broad(self):
         p = PermissionSet(deny=["Bash(ansible-playbook*playbooks/duzelt_*)"], mode=MODE_AUTO)
         # Farklı playbook etkilenmemeli
-        self.assertEqual(
-            p.decide("Bash", {"command": "ansible-playbook playbooks/durum_ntp.yml"}, True), ALLOW
+        self.assertNotEqual(
+            p.decide("Bash", {"command": "ansible-playbook playbooks/durum_ntp.yml"}, True), DENY
         )
-        # Farklı komut etkilenmemeli
+        # Farklı komut etkilenmemeli: echo hiçbir varsayılan kurala da takılmaz.
         self.assertEqual(
             p.decide("Bash", {"command": "echo playbooks/duzelt_ntp.yml"}, True), ALLOW
         )
@@ -2544,3 +2548,58 @@ class TestVoiceCevrimdisi(unittest.TestCase):
         sahte.assert_not_called()
         hatalar = [c.args[0] for c in io.tool_error.call_args_list if c.args]
         self.assertTrue(any("Çevrimdışı" in h for h in hatalar), hatalar)
+
+
+class TestFiloyaDokunanKomutlar(unittest.TestCase):
+    """Filoyu etkileyen komutlar oto modda bile onay istemeli.
+
+    DEFAULT_ASK kod tabanı odaklı yazılmıştı; ansible ve paket/servis
+    komutları listede yoktu. Oto modda "ansible-playbook site.yml" tek bir
+    araç çağrısıyla envanterin tamamına dokunuyordu.
+    """
+
+    def setUp(self):
+        self.perms = PermissionSet(mode=MODE_AUTO)
+
+    def _karar(self, komut, arac="Bash"):
+        return self.perms.decide(arac, {"command": komut}, mutating=True)
+
+    def test_ansible_playbook_oto_modda_sorulur(self):
+        self.assertEqual(self._karar("ansible-playbook site.yml"), ASK)
+        self.assertEqual(self._karar("ansible-playbook site.yml -l web01"), ASK)
+
+    def test_ansible_adhoc_oto_modda_sorulur(self):
+        self.assertEqual(self._karar("ansible all -m ping"), ASK)
+
+    def test_uzak_ansible_da_sorulur(self):
+        # Bash(...) biçimindeki sorma kuralları Ssh'ı da kapsamalı; yoksa
+        # kural yerelde geçerli, sunucuda geçersiz olurdu.
+        self.assertEqual(self._karar("ansible-playbook site.yml", arac="Ssh"), ASK)
+
+    def test_paket_ve_servis_degisiklikleri_sorulur(self):
+        for komut in (
+            "dnf install httpd",
+            "dnf update",
+            "yum remove httpd",
+            "systemctl restart nginx",
+            "systemctl stop nginx",
+        ):
+            self.assertEqual(self._karar(komut), ASK, komut)
+
+    def test_salt_okunur_komutlar_sorulmaz(self):
+        # Teşhis komutları oto modda akışı kesmemeli.
+        for komut in (
+            "dnf list installed",
+            "systemctl status nginx",
+            "systemctl is-active nginx",
+            "ansible-doc -l",
+            "ansible-inventory --graph",
+        ):
+            self.assertEqual(self._karar(komut), ALLOW, komut)
+
+    def test_kullanici_izni_varsayilan_sormayi_ezer(self):
+        perms = PermissionSet(allow=["Bash(ansible-playbook:*)"], mode=MODE_AUTO)
+        self.assertEqual(
+            perms.decide("Bash", {"command": "ansible-playbook site.yml"}, mutating=True),
+            ALLOW,
+        )
