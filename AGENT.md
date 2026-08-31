@@ -55,6 +55,19 @@ curl -s "$OPENAI_API_BASE/models" \
   -H "Authorization: Bearer $OPENAI_API_KEY" | jq -r '.data[].id'
 ```
 
+### Repo haritası
+
+Agent modunda **varsayılan olarak kapalı**. Aider'ın klasik akışında harita
+modele yön vermek için gerekliydi; burada modelin Glob, Grep ve Read araçları
+var, aradığını kendisi buluyor. Harita ise her isteğe yeniden gömülüyor ve
+sohbete dosya eklenmemişken sekiz katına çıkıyor.
+
+İstersen aç:
+
+```bash
+aider --agent --map-tokens 1024
+```
+
 ### Depodan kurulum (klon + venv, proxy arkasında)
 
 `kur.sh` ağa çıkıp `uv` indirir. Kurum ağında bu engelliyse ya da elinde zaten

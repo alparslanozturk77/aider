@@ -11,7 +11,9 @@ import sys
 from aider.agent.plan import PLAN_MODE_REMINDER, ExitPlanModeTool
 from aider.agent.mcp import MCPManager
 from aider.agent.memory import (
+    INSTRUCTION_BUDGET,
     INSTRUCTION_WARN_CHARS,
+    MEMORY_BUDGET,
     HatirlaTool,
     MemoryStore,
     default_memory_roots,
@@ -47,6 +49,13 @@ RESULT_PREVIEW_LINES = 15
 # yeterli: zayıf modeller çoğu zaman ikinci denemede devam ediyor, daha
 # fazlası boş-dürtme-boş döngüsüne çeviriyor.
 MAX_BOS_DURTME = 1
+
+# Sistem promptundaki bellek ve proje talimatı bloklarının bağlam
+# penceresinden alabileceği pay. Sabit karakter sınırları küçük modellerde
+# promptun tamamına yakınını yiyordu: 12.000 karakter ~3.000 token, yani 8k
+# pencereli bir modelde iş yapacak yer kalmıyor.
+BELLEK_PAYI = 0.10
+TALIMAT_PAYI = 0.15
 
 
 class AgentCoder(Coder):
@@ -96,7 +105,11 @@ class AgentCoder(Coder):
         self.ctx.memory = MemoryStore(default_memory_roots(self.root))
         self.ctx.plan_mode = self.plan_mode
 
-        self.instructions, self.instruction_files = load_instructions(self.root)
+        self.bellek_butcesi = self._prompt_butcesi(BELLEK_PAYI, MEMORY_BUDGET)
+        self.talimat_butcesi = self._prompt_butcesi(TALIMAT_PAYI, INSTRUCTION_BUDGET)
+        self.instructions, self.instruction_files = load_instructions(
+            self.root, self.talimat_butcesi
+        )
 
         try:
             self.ctx.permissions = load_permissions(
@@ -112,6 +125,21 @@ class AgentCoder(Coder):
             self.ctx.permissions = load_permissions(self.root, mode=MODE_ASK)
 
         self._install_status_bar()
+
+    def _prompt_butcesi(self, pay, tavan):
+        """Sistem promptundaki bir bloğun karakter bütçesi.
+
+        Modelin penceresi bilinmiyorsa (özel endpoint'lerde sık) tavan
+        kullanılır: tahmin edip çalışan bir kurulumu bozmaktansa eski
+        davranışta kalmak yeğ.
+        """
+        try:
+            pencere = (self.main_model.info or {}).get("max_input_tokens")
+        except Exception:
+            pencere = None
+        if not pencere:
+            return tavan
+        return max(1_000, min(tavan, int(pencere * pay) * 4))
 
     # ------------------------------------------------------------------
     # Durum çubuğu ve mod değiştirme
@@ -217,7 +245,7 @@ class AgentCoder(Coder):
                     " çağırmaz. Sorun yaşarsan kısalt ya da başka dizinde çalış."
                 )
         if self.ctx.memory.notes:
-            dusen = self.ctx.memory.dropped()
+            dusen = self.ctx.memory.dropped(self.bellek_butcesi)
             satir = f"Bellek: {len(self.ctx.memory.notes)} not"
             if dusen:
                 satir += f" ({dusen} tanesi bütçe nedeniyle yüklenmedi)"
@@ -244,7 +272,7 @@ class AgentCoder(Coder):
         if self.instructions:
             out += self.gpt_prompts.instructions_prompt.format(instructions=self.instructions)
 
-        notes = self.ctx.memory.render()
+        notes = self.ctx.memory.render(self.bellek_butcesi)
         if notes:
             out += self.gpt_prompts.memory_prompt.format(memory=notes)
 

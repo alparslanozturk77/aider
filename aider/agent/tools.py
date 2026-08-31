@@ -147,9 +147,11 @@ class ReadTool(PathTool):
         width = len(str(start + len(chunk) - 1))
         body = "\n".join(f"{str(start + i).rjust(width)}\t{line}" for i, line in enumerate(chunk))
 
-        # Okunan dosyayı aider'ın sohbet bağlamına da ekle ki repo haritası ve
-        # otomatik commit mantığı dosyadan haberdar olsun.
-        ctx.coder.abs_fnames.add(str(p.resolve()))
+        # DİKKAT: okunan dosya aider'ın abs_fnames listesine EKLENMEZ.
+        # Eklenirse dosyanın tam içeriği bundan sonraki HER isteğe yeniden
+        # gömülüyor (base_coder.get_chat_files_messages), yani model birkaç
+        # dosya okuduktan sonra bağlam yalnızca dosya tekrarlarıyla doluyor.
+        # Okunan içerik zaten araç sonucu olarak geçmişte duruyor.
 
         end = start + len(chunk) - 1
         header = f"{p} (satır {start}-{end}, toplam {len(lines)})"
@@ -188,8 +190,8 @@ class WriteTool(PathTool):
         except OSError as err:
             raise ToolError(f"{p} yazılamadı: {err}")
 
-        abs_p = str(p.resolve())
-        ctx.coder.abs_fnames.add(abs_p)
+        # abs_fnames'e eklenmiyor; gerekçe ReadTool.run içinde. Commit ve lint
+        # için gereken tek şey aider_edited_files.
         if ctx.coder.aider_edited_files is not None:
             ctx.coder.aider_edited_files.add(rel)
 
@@ -258,7 +260,6 @@ class EditTool(PathTool):
         except OSError as err:
             raise ToolError(f"{p} yazılamadı: {err}")
 
-        ctx.coder.abs_fnames.add(str(p.resolve()))
         if ctx.coder.aider_edited_files is not None:
             ctx.coder.aider_edited_files.add(rel)
 

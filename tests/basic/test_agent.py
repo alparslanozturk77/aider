@@ -73,11 +73,17 @@ class TestReadTool(unittest.TestCase):
         with self.assertRaises(ToolError):
             ReadTool().run(self.ctx, file_path=".")
 
-    def test_adds_file_to_chat_context(self):
+    def test_kalici_baglama_eklemez(self):
+        """Okunan dosya aider'ın sohbet dosyalarına eklenmemeli.
+
+        Eskiden ekleniyordu ve bu, dosyanın tam içeriğinin bundan sonraki her
+        isteğe yeniden gömülmesine yol açıyordu. Ayrıntı:
+        TestBaglamaSizanDosyalar.
+        """
         p = self.root / "a.txt"
         p.write_text("x")
         ReadTool().run(self.ctx, file_path="a.txt")
-        self.assertIn(str(p.resolve()), self.ctx.coder.abs_fnames)
+        self.assertNotIn(str(p.resolve()), self.ctx.coder.abs_fnames)
 
 
 class TestWriteTool(unittest.TestCase):
@@ -635,6 +641,7 @@ from aider.agent.permissions import (  # noqa: E402
     MODE_AUTO,
     PermissionSet,
     Rule,
+    _match_path,
     split_command,
     suggest_rule,
 )
@@ -803,6 +810,79 @@ class TestSuggestRule(unittest.TestCase):
 
     def test_non_bash_tool(self):
         self.assertEqual(suggest_rule("Write", {"file_path": "a.py"}), "Write")
+
+    def test_ssh_kurali_komuta_daralir(self):
+        """Uzak komutta "bir daha sorma" her sunucuyu açmamalı.
+
+        Çıplak "Ssh" kuralı her hostta her komutu onaysız hâle getiriyordu:
+        tek bir "df -h" onayı, tanımlı bütün sunucularda "rm -rf" demekti.
+        """
+        kural = suggest_rule("Ssh", {"host": "skyup", "command": "yum check-update"})
+        self.assertEqual(kural, "Ssh(yum check-update:*)")
+        self.assertNotEqual(kural, "Ssh")
+
+    def test_ssh_kurali_baska_komutu_kapsamaz(self):
+        kural = Rule(suggest_rule("Ssh", {"host": "skyup", "command": "df -h"}))
+        self.assertTrue(kural.matches("Ssh", {"command": "df -h /var"}))
+        self.assertFalse(kural.matches("Ssh", {"command": "rm -rf /var"}))
+
+
+class TestNoktaliYolEslesmesi(unittest.TestCase):
+    """Nokta ile başlayan yollar kurallara yakalanmalı.
+
+    _match_path içindeki lstrip("./") karakter siliyordu, önek değil: ".env"
+    yolu "env" oluyor ve Edit(.env) gibi bir reddetme kuralı sessizce
+    ıskalıyordu.
+    """
+
+    def test_gizli_dosya_kuralla_eslesir(self):
+        self.assertTrue(_match_path(".env", ".env"))
+        self.assertTrue(_match_path(".env*", ".env.local"))
+
+    def test_gizli_dosya_reddi_calisir(self):
+        perms = PermissionSet(deny=["Edit(.env)"], mode=MODE_AUTO)
+        self.assertEqual(perms.decide("Edit", {"file_path": ".env"}, mutating=True), DENY)
+
+    def test_nokta_egik_oneki_soyulur(self):
+        self.assertTrue(_match_path("src/**", "./src/a/b.py"))
+
+    def test_ilgisiz_yol_eslesmez(self):
+        self.assertFalse(_match_path(".env", "env"))
+
+
+class TestBaglamaSizanDosyalar(unittest.TestCase):
+    """Araçlar okudukları dosyayı kalıcı sohbet bağlamına eklememeli.
+
+    Eklendiğinde aider dosyanın TAM içeriğini bundan sonraki her isteğe
+    yeniden gömüyor (base_coder.get_chat_files_messages). Model birkaç dosya
+    okuyunca bağlam yalnızca dosya tekrarlarıyla doluyor ve pencere bitiyor.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        (self.root / "a.py").write_text("print(1)\n")
+        (self.root / "b.py").write_text("print(2)\n")
+        self.ctx = make_ctx(self.root)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_read_kalici_baglama_eklemez(self):
+        ReadTool().run(self.ctx, file_path="a.py")
+        ReadTool().run(self.ctx, file_path="b.py")
+        self.assertEqual(self.ctx.coder.abs_fnames, set())
+
+    def test_write_kalici_baglama_eklemez(self):
+        WriteTool().run(self.ctx, file_path="c.py", content="print(3)\n")
+        self.assertEqual(self.ctx.coder.abs_fnames, set())
+        # Commit ve lint için gereken kayıt yerinde kalmalı.
+        self.assertIn("c.py", self.ctx.coder.aider_edited_files)
+
+    def test_edit_kalici_baglama_eklemez(self):
+        EditTool().run(self.ctx, file_path="a.py", old_string="1", new_string="9")
+        self.assertEqual(self.ctx.coder.abs_fnames, set())
+        self.assertIn("a.py", self.ctx.coder.aider_edited_files)
 
 
 class TestSshUsesBashDenyRules(unittest.TestCase):
@@ -1506,16 +1586,23 @@ class TestMemoryStore(unittest.TestCase):
         self.assertEqual(self.store.render(), "")
 
     def test_budget_drops_oldest_and_reports_count(self):
-        import aider.agent.memory as mem
-
+        # Bütçe artık parametre: modül sabitini yamalamak işe yaramaz, çünkü
+        # varsayılan argüman tanım anında bağlanıyor. AgentCoder bu değeri
+        # modelin bağlam penceresinden hesaplayıp geçiriyor.
         long_body = "x" * 3000
         for i in range(10):
             self.store.write(f"Not {i}", long_body, "proje")
 
-        with patch.object(mem, "MEMORY_BUDGET", 6000):
-            rendered = self.store.render()
-            self.assertLessEqual(len(rendered), 6000)
-            self.assertGreater(self.store.dropped(), 0)
+        rendered = self.store.render(6000)
+        self.assertLessEqual(len(rendered), 6000)
+        self.assertGreater(self.store.dropped(6000), 0)
+
+    def test_varsayilan_butce_tavani(self):
+        from aider.agent.memory import MEMORY_BUDGET
+
+        for i in range(10):
+            self.store.write(f"Not {i}", "x" * 3000, "proje")
+        self.assertLessEqual(len(self.store.render()), MEMORY_BUDGET)
 
     def test_first_root_wins_on_name_collision(self):
         kisisel = Path(self.tmp.name) / "kisisel"

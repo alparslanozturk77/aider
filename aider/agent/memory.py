@@ -12,9 +12,12 @@ dair kolay unutulan gerçekler.
 
 Bellek dizinleri, öncelik sırasıyla (beceri sistemiyle aynı desen):
 
-    ~/.aider/memory/            kişisel, tüm projelerde
-    <proje>/aider-memory/       proje, depoya girer, takımla paylaşılır
     <proje>/.aider/memory/      proje, kişisel, depoya girmez
+    <proje>/aider-memory/       proje, depoya girer, takımla paylaşılır
+    ~/.aider/memory/            kişisel, tüm projelerde
+
+Önce gelen kazanır: aynı adlı bir not hem kişisel hem paylaşılan dizinde
+varsa kişisel olan geçerlidir.
 """
 
 import os
@@ -42,7 +45,14 @@ SHARED_MEMORY_DIR = "aider-memory"
 
 # Bellek notlarının tamamı sistem promptuna giriyor. Notlar kısa olmak zorunda;
 # bu sınır aşılırsa en yeniler tutulur ve kullanıcı uyarılır.
+#
+# Bu bir TAVAN; gerçek bütçe modelin bağlam penceresine göre daraltılıyor
+# (AgentCoder._prompt_butcesi). Sabit 12.000 karakter, 8k pencereli bir
+# modelde promptun tamamına yakınını yiyordu.
 MEMORY_BUDGET = 12_000
+
+# Proje talimatları için aynı mantık.
+INSTRUCTION_BUDGET = 20_000
 
 # Not türleri. Model hangi tür olduğunu seçer; tür yalnızca okunabilirlik için.
 TYPES = ("proje", "tercih", "ortam", "referans")
@@ -144,7 +154,7 @@ class MemoryStore:
         self.load()
         return note.path
 
-    def render(self):
+    def render(self, butce=MEMORY_BUDGET):
         """Sistem promptuna eklenecek metin."""
         if not self.notes:
             return ""
@@ -153,15 +163,15 @@ class MemoryStore:
         parcalar, toplam = [], 0
         for note in siralı:
             metin = note.render()
-            if toplam + len(metin) > MEMORY_BUDGET:
+            if toplam + len(metin) > butce:
                 break
             parcalar.append(metin)
             toplam += len(metin)
         return "\n".join(parcalar)
 
-    def dropped(self):
+    def dropped(self, butce=MEMORY_BUDGET):
         """Bütçe yüzünden prompta girmeyen not sayısı."""
-        rendered = self.render()
+        rendered = self.render(butce)
         return sum(1 for n in self.notes.values() if n.render() not in rendered)
 
 
@@ -177,7 +187,7 @@ def default_memory_roots(project_root):
     return roots
 
 
-def load_instructions(project_root):
+def load_instructions(project_root, butce=INSTRUCTION_BUDGET):
     """Depo kökündeki talimat dosyalarını oku.
 
     (metin, bulunan_dosyalar) döndürür.
@@ -196,7 +206,7 @@ def load_instructions(project_root):
             continue
         parcalar.append(f"### {name}\n\n{text}")
         bulunan.append(path)
-    return _truncate("\n\n".join(parcalar), 20_000), bulunan
+    return _truncate("\n\n".join(parcalar), butce), bulunan
 
 
 class HatirlaTool(Tool):

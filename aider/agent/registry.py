@@ -28,7 +28,8 @@ class ToolContext:
         self.approved_plan = None
         # İzin kuralları; AgentCoder tarafından atanır.
         self.permissions = None
-        # Bash için oturum boyunca hatırlanan çalışma dizini
+        # Bash komutlarının çalıştırıldığı dizin. Sabit: bir komuttaki `cd`
+        # sonraki komuta taşınmaz — her çağrı proje kökünden başlar.
         self.cwd = coder.root
         # confirm() çağrısı sırasında değerlendirilen araç çağrısının argümanları.
         # Araçlar confirm'e yalnızca bir konu metni verdiği için, izin kurallarının

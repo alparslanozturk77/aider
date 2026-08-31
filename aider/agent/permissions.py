@@ -135,7 +135,10 @@ def _match_path(pattern, path):
     """Yolu glob desenine karşı sına; '**' alt dizinleri de kapsar."""
     if not path:
         return False
-    path = path.lstrip("./")
+    # DİKKAT: lstrip("./") karakter siler, önek değil. ".env" yolunu "env"
+    # yapıyordu ve Edit(.env) gibi bir reddetme kuralı sessizce ıskalıyordu.
+    if path.startswith("./"):
+        path = path[2:]
     if fnmatch.fnmatch(path, pattern):
         return True
     # 'src/**' deseni 'src/a/b.py' kadar 'src/b.py' yolunu da kapsamalı.
@@ -245,8 +248,13 @@ def matches_any(rules, tool_name, args):
 
 
 def suggest_rule(tool_name, args):
-    """Kullanıcı 'bir daha sorma' dediğinde önerilecek kural metni."""
-    if tool_name == "Bash":
+    """Kullanıcı 'bir daha sorma' dediğinde önerilecek kural metni.
+
+    Komut çalıştıran araçlarda kural MUTLAKA komuta göre daraltılır. Çıplak
+    "Ssh" kuralı, tek bir "bir daha sorma" yanıtıyla tanımlı her sunucuda her
+    uzak komutu onaysız hâle getiriyordu.
+    """
+    if tool_name in COMMAND_TOOLS:
         command = (args.get("command") or "").strip()
         parts = split_command(command)
         base = parts[0] if parts else command

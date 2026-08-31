@@ -51,7 +51,7 @@ değiştirmek zorunda kalırsan yamayı en küçük blokta tut ve nedenini yorum
 | `aider/models.py` | `send_completion` çok araçlı `tool_choice="auto"` destekliyor |
 | `aider/coders/__init__.py` | `AgentCoder` kaydı |
 | `aider/args.py` | `--agent`, `--plan`, `--auto`, `--permission-mode`, `--max-tool-iterations` |
-| `aider/main.py` | Agent kwarg'larının yalnızca agent coder'a geçirilmesi |
+| `aider/main.py` | Agent kwarg'ları yalnızca agent coder'a; agent modunda repo map varsayılan kapalı |
 | `aider/io.py` | Mod göstergesi kancaları ve `shift+tab` |
 | `aider/commands.py` | On iki slash komutu |
 | `.gitignore` | `.env` ve `.mcp.json` ignore |
@@ -234,6 +234,27 @@ kancaları, prompt önekini üreten `build_prompt_prefix()` ve prompt mesajını
 `invalidate()` aynı metni yeniden çiziyor ve değişim ekranda ancak bir
 sonraki prompt'ta görünüyor. `test_prompt_message_is_callable_and_follows_mode`
 bunu koruyor.
+
+## Bağlam disiplini
+
+Agent modunda bağlamı üç şey şişiriyordu; üçü de ölçülüp kapatıldı.
+
+**Araçlar okudukları dosyayı kalıcı bağlama eklemiyor.** `Read`/`Write`/`Edit`
+eskiden dosyayı `abs_fnames`'e ekliyordu; aider o listedeki her dosyanın **tam
+içeriğini her isteğe** yeniden gömdüğü için (`get_chat_files_messages`) model
+birkaç dosya okuduktan sonra pencere yalnızca dosya tekrarlarıyla doluyordu.
+Okunan içerik zaten araç sonucu olarak geçmişte duruyor. Kullanıcının `/add`
+ile eklediği dosyalar elbette bağlamda kalır — değişen, araçların sessizce
+dosya eklemesi.
+
+**Repo haritası agent modunda varsayılan kapalı.** Modelin Glob/Grep/Read'i
+var; harita her isteğe yeniden giriyor ve sohbete dosya eklenmemişken
+`map_multiplier_no_files` ile sekiz katına çıkıyor. Açmak isteyen
+`--map-tokens` verir.
+
+**Bellek ve proje talimatı bütçeleri pencereye göre ölçekleniyor.** Sabit
+12.000 ve 20.000 karakter, 8k pencereli bir modelde iş yapacak yer
+bırakmıyordu; artık pencerenin yüzde 10'u ve 15'i, eski değerler tavan.
 
 ## Zayıf model dayanıklılığı
 

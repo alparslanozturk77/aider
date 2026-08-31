@@ -961,10 +961,17 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             )
         args.stream = False
 
-    if args.map_tokens is None:
-        map_tokens = main_model.get_repo_map_tokens()
-    else:
+    if args.map_tokens is not None:
         map_tokens = args.map_tokens
+    elif args.edit_format == "agent":
+        # Agent modunda repo haritası varsayılan olarak kapalı. Modelin zaten
+        # Glob/Grep/Read araçları var; harita her isteğe yeniden gömülüyor ve
+        # sohbete dosya eklenmemişken map_multiplier_no_files ile sekiz katına
+        # çıkıyor. Küçük pencereli bir modelde bu, iş yapacak yer bırakmıyor.
+        # Açmak isteyen --map-tokens ile açar.
+        map_tokens = 0
+    else:
+        map_tokens = main_model.get_repo_map_tokens()
 
     # Track auto-commits configuration
     analytics.event("auto_commits", enabled=bool(args.auto_commits))
