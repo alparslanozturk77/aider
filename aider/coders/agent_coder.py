@@ -67,6 +67,7 @@ class AgentCoder(Coder):
     def __init__(self, *args, **kwargs):
         self.plan_mode = kwargs.pop("plan_mode", False)
         self.max_iterations = kwargs.pop("max_iterations", DEFAULT_MAX_ITERATIONS)
+        self.offline = kwargs.pop("offline", False)
         permission_mode = kwargs.pop("permission_mode", None) or (
             MODE_PLAN if self.plan_mode else MODE_ASK
         )
@@ -91,7 +92,7 @@ class AgentCoder(Coder):
 
         # MCP sunucuları oturum başında başlatılır. Bir sunucunun ayağa
         # kalkmaması oturumu düşürmez; hata bildirilir ve devam edilir.
-        self.mcp = MCPManager(self.io, self.root)
+        self.mcp = MCPManager(self.io, self.root, offline=self.offline)
         mcp_tools = self.mcp.load()
         for err in self.mcp.errors:
             self.io.tool_error(f"MCP: {err}")
@@ -250,6 +251,8 @@ class AgentCoder(Coder):
             if dusen:
                 satir += f" ({dusen} tanesi bütçe nedeniyle yüklenmedi)"
             lines.append(satir)
+        if self.offline:
+            lines.append("Çevrimdışı mod: sürüm denetimi, analitik ve URL çekme kapalı")
         if self.plan_mode:
             lines.append("Plan modu AÇIK — onay alınana dek dosya değiştirilmez")
         elif self.ctx.permissions.mode == MODE_AUTO:

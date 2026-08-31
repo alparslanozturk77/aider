@@ -146,7 +146,14 @@ def _check_cli_flags():
     for action in parser._actions:
         known.update(action.option_strings)
 
-    required = ["--agent", "--plan", "--auto", "--permission-mode", "--max-tool-iterations"]
+    required = [
+        "--agent",
+        "--plan",
+        "--auto",
+        "--permission-mode",
+        "--max-tool-iterations",
+        "--offline",
+    ]
     missing = [f for f in required if f not in known]
     if missing:
         raise Fail(f"eksik bayraklar: {', '.join(missing)}")
@@ -159,6 +166,19 @@ def _check_cli_flags():
     args = parser.parse_args(["--auto"])
     if args.permission_mode != "auto":
         raise Fail("--auto permission_mode'u 'auto' yapmıyor")
+
+    # --offline gerçekten ağa çıkan davranışları kapatıyor mu? Bayrağın var
+    # olması yetmez; hava boşluklu sunucuda önemli olan etkisi.
+    from aider.main import cevrimdisi_uygula
+
+    args = cevrimdisi_uygula(parser.parse_args(["--offline"]))
+    acik = [
+        ad
+        for ad in ("check_update", "just_check_update", "analytics", "detect_urls")
+        if getattr(args, ad) not in (False, None)
+    ]
+    if acik:
+        raise Fail("--offline şunları kapatmıyor: " + ", ".join(acik))
 
 
 # ---------------------------------------------------------------------------

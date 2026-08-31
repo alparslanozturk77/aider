@@ -1671,6 +1671,18 @@ Sonucun kullanıcıya nasıl sunulacağını tarif et.
     def cmd_voice(self, args):
         "Record and transcribe voice input"
 
+        # Çevrimdışı modda ses kaydı gönderilemez. aider/voice.py model adını
+        # "whisper-1" olarak sabit yazıyor ve litellm.transcription'a api_base
+        # GEÇİRMİYOR; OPENAI_API_BASE boşsa kayıt doğrudan api.openai.com'a
+        # gider. Hava boşluklu bir sunucuda bu, en iyi ihtimalle sessiz bir
+        # hata, en kötüsü dışarı veri çıkışıdır.
+        if getattr(self.coder, "offline", False):
+            self.io.tool_error(
+                "Çevrimdışı modda /voice kapalı: ses kaydı transkripsiyon için dış bir"
+                " servise gönderilir (aider/voice.py api_base'i iletmiyor)."
+            )
+            return
+
         if not self.voice:
             if "OPENAI_API_KEY" not in os.environ:
                 self.io.tool_error("To use /voice you must provide an OpenAI API key.")

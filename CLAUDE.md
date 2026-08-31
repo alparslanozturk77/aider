@@ -27,7 +27,7 @@ Agent katmanı ayrı bir pakette; `base_coder.py`'ye ameliyat yapılmadı.
 aider/agent/
   registry.py     ToolRegistry, ToolContext, ToolError
   tools.py        Read, Write, Edit, Bash, Glob, Grep
-  ssh_tool.py     Ssh — sunucu adını ~/.ssh/config'e karşı doğrular
+  ssh_tool.py     Ssh — adı ssh config, known_hosts ve ansible envanterinde arar
   permissions.py  Üç katmanlı izin sistemi (deny / ask / allow)
   mcp.py          MCP istemcisi (stdio, JSON-RPC 2.0)
   skills.py       SKILL.md keşfi ve kademeli açılım
@@ -50,10 +50,10 @@ değiştirmek zorunda kalırsan yamayı en küçük blokta tut ve nedenini yorum
 |---|---|
 | `aider/models.py` | `send_completion` çok araçlı `tool_choice="auto"` destekliyor |
 | `aider/coders/__init__.py` | `AgentCoder` kaydı |
-| `aider/args.py` | `--agent`, `--plan`, `--auto`, `--permission-mode`, `--max-tool-iterations` |
+| `aider/args.py` | `--agent`, `--plan`, `--auto`, `--permission-mode`, `--max-tool-iterations`, `--offline` |
 | `aider/main.py` | Agent kwarg'ları yalnızca agent coder'a; agent modunda repo map varsayılan kapalı |
 | `aider/io.py` | Mod göstergesi kancaları ve `shift+tab` |
-| `aider/commands.py` | On iki slash komutu |
+| `aider/commands.py` | On iki slash komutu; `/voice` çevrimdışı modda kapalı |
 | `.gitignore` | `.env` ve `.mcp.json` ignore |
 | `README.md` | Fork'un kendi ön yüzü; upstream'inki `ORIJINAL-README.md` |
 
@@ -234,6 +234,21 @@ kancaları, prompt önekini üreten `build_prompt_prefix()` ve prompt mesajını
 `invalidate()` aynı metni yeniden çiziyor ve değişim ekranda ancak bir
 sonraki prompt'ta görünüyor. `test_prompt_message_is_callable_and_follows_mode`
 bunu koruyor.
+
+## Çevrimdışı çalışma
+
+Hedef ortam hava boşluklu. `--offline` ağa çıkan her davranışı tek noktadan
+kapatır: sürüm denetimi, analitik, URL çekme, `/voice` ve `npx`/`uvx` ile
+başlayan MCP sunucuları. Gerekçeler `AGENT.md`'de; en kritiği sürüm
+denetimi — `versioncheck.check_version` içindeki `requests.get` **zaman
+aşımsız**, yani ağ yokken açılış TCP zaman aşımı kadar askıda kalıyor.
+
+Zorlamayı `main.cevrimdisi_uygula()` yapıyor; ayrı bir fonksiyon olmasının
+sebebi `fork_dogrula.py`'nin bayrağın varlığını değil **etkisini**
+sınayabilmesi.
+
+Yeni bir özellik eklerken kuralı sor: ağa çıkıyor mu? Çıkıyorsa çevrimdışı
+modda ne yapmalı?
 
 ## Bağlam disiplini
 

@@ -183,6 +183,15 @@ def get_parser(default_config_files, git_root):
         help="Use the agentic tool-calling mode (Claude Code style) for the main chat",
     )
     group.add_argument(
+        "--offline",
+        action="store_true",
+        default=False,
+        help=(
+            "Offline mode: no update check, no analytics, no URL fetching. For air-gapped"
+            " institutional servers."
+        ),
+    )
+    group.add_argument(
         "--plan",
         action="store_true",
         default=False,

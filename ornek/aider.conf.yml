@@ -55,3 +55,7 @@ auto-commits: true
 show-model-warnings: false
 
 stream: true
+
+# Hava boşluklu sunucuda: sürüm denetimi, analitik, URL çekme ve /voice
+# kapatılır. Ağ varsa gerekmez.
+# offline: true

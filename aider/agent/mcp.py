@@ -41,6 +41,11 @@ REQUEST_TIMEOUT = 120
 
 CONFIG_NAMES = (".mcp.json", ".aider/mcp.json")
 
+# Paketi çalıştırmadan önce ağdan indiren başlatıcılar. Çevrimdışı bir
+# sunucuda bunlar sessizce takılıp STARTUP_TIMEOUT boyunca bekletiyor;
+# belirtisi "aider açılmıyor" oluyor, sebebi görünmüyor.
+AG_INDIREN_KOMUTLAR = ("npx", "uvx", "bunx", "pnpx", "pipx")
+
 
 class MCPError(Exception):
     """MCP sunucusuyla konuşurken oluşan hata."""
@@ -271,9 +276,10 @@ def read_config(path):
 class MCPManager:
     """Yapılandırılmış tüm MCP sunucularını yönetir."""
 
-    def __init__(self, io, project_root):
+    def __init__(self, io, project_root, offline=False):
         self.io = io
         self.project_root = project_root
+        self.offline = offline
         self.servers = {}
         self.tools = []
         self.errors = []
@@ -301,6 +307,13 @@ class MCPManager:
             return self.tools
 
         for name, cfg in configs.items():
+            if self.offline and cfg["command"] in AG_INDIREN_KOMUTLAR:
+                self.errors.append(
+                    f"{name}: '{cfg['command']}' paketi ağdan indirir, çevrimdışı modda"
+                    " başlatılmadı. Paketi önceden kurup 'command' alanına doğrudan"
+                    " çalıştırılabilir yolu yaz."
+                )
+                continue
             server = MCPServer(
                 name=name,
                 command=cfg["command"],

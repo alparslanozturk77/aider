@@ -65,6 +65,18 @@ else
     bilgi "Komut: $HEDEF/.venv/bin/aider  (PATH'e eklemek sana kalmış)"
 fi
 
+# --- Çevrimdışı varsayılanı ------------------------------------------------
+# Bu paket hava boşluklu sunucu için. Sürüm denetimi varsayılan açık ve
+# altındaki istek zaman aşımsız: ağ yoksa her açılış askıda kalıyor.
+KONF="$HOME/.aider.conf.yml"
+if [ ! -f "$KONF" ]; then
+    printf 'offline: true\n' > "$KONF"
+    chmod 0600 "$KONF"
+    bilgi "Çevrimdışı mod açıldı: $KONF"
+elif ! grep -q '^offline:' "$KONF" 2>/dev/null; then
+    bilgi "UYARI: $KONF var. Çevrimdışı mod için şu satırı ekle: offline: true"
+fi
+
 echo
 printf '\033[1mKuruldu.\033[0m\n'
 bilgi "Beceriler programla birlikte kuruldu; her dizinde görünürler."

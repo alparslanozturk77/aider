@@ -55,6 +55,33 @@ curl -s "$OPENAI_API_BASE/models" \
   -H "Authorization: Bearer $OPENAI_API_KEY" | jq -r '.data[].id'
 ```
 
+### Çevrimdışı mod
+
+Hava boşluklu bir kurum sunucusunda:
+
+```bash
+aider --agent --offline
+```
+
+Ağa çıkan her davranışı tek noktadan kapatır:
+
+| Kapatılan | Neden |
+|---|---|
+| Sürüm denetimi | `--check-update` varsayılan AÇIK ve altındaki `requests.get` **zaman aşımsız**; ağ yoksa açılış TCP zaman aşımı kadar bekliyor |
+| Analitik (PostHog) | Açılışta etkinleşip kullanım olaylarını dışarı gönderiyor |
+| URL çekme | Sohbetteki adresleri indirmeyi öneriyor |
+| `/voice` | `aider/voice.py` `api_base`'i iletmiyor; ses kaydı `api.openai.com`'a giderdi |
+| `npx`/`uvx` ile başlayan MCP sunucuları | Paketi ağdan indirirler; çevrimdışında sessizce takılıyorlar |
+
+Kalıcı yapmak için `~/.aider.conf.yml` dosyasına:
+
+```yaml
+offline: true
+```
+
+MCP sunucusu kullanacaksan paketi önceden kur ve `command` alanına doğrudan
+çalıştırılabilir yolu yaz (`npx` değil).
+
 ### Repo haritası
 
 Agent modunda **varsayılan olarak kapalı**. Aider'ın klasik akışında harita
@@ -294,11 +321,36 @@ Actions artefaktları da 7 gün sonra düşer (`retention-days: 7`).
 | `Write` | Dosyayı tamamen yazar, üstüne yazar | **evet** |
 | `Edit` | Birebir string değişimi; belirsiz eşleşmede hata verir | **evet** |
 | `Bash` | Kabuk komutu çalıştırır, zaman aşımlı | **evet** |
+| `Ssh` | Uzak sunucuda komut çalıştırır; adı doğrular | **evet** |
 | `Glob` | Desene uyan dosyaları bulur, tarihe göre sıralı | hayır |
 | `Grep` | İçerikte regex arar; ripgrep varsa onu kullanır | hayır |
 | `TodoWrite` | Çok adımlı işlerde görev listesi tutar | hayır |
 | `Skill` | Bir beceriyi bağlama yükler | hayır |
+| `Hatirla` | Kalıcı not kaydeder | **evet** |
 | `ExitPlanMode` | Planı onaya sunar (yalnızca plan modunda) | **evet** |
+
+### Ssh ve sunucu adları
+
+Model `ssh` komutunu Bash ile kendisi kurunca sunucu adını uyduruyor —
+gözlendi: kullanıcı "skyup" dedi, model `ssh skyup@kurum.local` üretti.
+Ayrı bir araç olmasının sebebi bu.
+
+Sunucu adı üç kaynakta aranır:
+
+1. `~/.ssh/config` — takma adlar
+2. `~/.ssh/known_hosts` — daha önce bağlanılmış makineler (karma girdiler
+   geri çözülemediği için atlanır)
+3. **ansible envanterleri** — proje kökünde ve bir alt dizinde `hosts*.ini`,
+   `hosts*.yml`, `inventory*`
+
+Üçünde de yoksa komut **reddedilmez, kullanıcıya sorulur**: public-key
+kimlik doğrulaması kurulmuş ve DNS'te çözülen bir sunucu (`ssh srvsatellite
+"komut"`) hiçbir yapılandırma dosyasında görünmeyebilir. Bu soru oto modda
+bile sorulur ve onaylanan ad oturum boyunca hatırlanır.
+
+`user@` eklenmiş bir ad her zaman reddedilir. Alan adı içeren ad ise yalnızca
+bilinen kaynaklarda yoksa reddedilir — `known_hosts` pekâlâ FQDN tutuyor
+olabilir.
 
 Onay davranışı izin sistemiyle yönetilir; aşağıya bak.
 

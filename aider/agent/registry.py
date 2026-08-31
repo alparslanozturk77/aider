@@ -26,6 +26,9 @@ class ToolContext:
         self.skills = None  # SkillLibrary, AgentCoder tarafından atanır
         self.plan_mode = False
         self.approved_plan = None
+        # Hiçbir yapılandırma dosyasında görünmeyen ama kullanıcının bu
+        # oturumda onayladığı sunucu adları; her komutta tekrar sorulmasın.
+        self.onaylanan_sunucular = set()
         # İzin kuralları; AgentCoder tarafından atanır.
         self.permissions = None
         # Bash komutlarının çalıştırıldığı dizin. Sabit: bir komuttaki `cd`

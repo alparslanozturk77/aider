@@ -448,6 +448,25 @@ def sanity_check_repo(repo, io):
     return False
 
 
+def cevrimdisi_uygula(args):
+    """--offline verilmişse ağa çıkan her davranışı kapat.
+
+    Ayrı ayrı bayrak vermeyi beklemek işe yaramıyor: kurum sunucusunda
+    unutulan tek bir tanesi açılışı askıda bırakıyor ya da dışarı veri
+    gönderiyor. Ölçülen en kötüsü sürüm denetimi — versioncheck.check_version
+    içindeki requests.get'in zaman aşımı yok, yani ağ yoksa açılış işletim
+    sisteminin TCP zaman aşımı kadar bekliyor.
+    """
+    if not getattr(args, "offline", False):
+        return args
+
+    args.check_update = False
+    args.just_check_update = False
+    args.analytics = False
+    args.detect_urls = False
+    return args
+
+
 def main(argv=None, input=None, output=None, force_git_root=None, return_coder=False):
     report_uncaught_exceptions()
 
@@ -511,6 +530,8 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
 
     if git is None:
         args.git = False
+
+    cevrimdisi_uygula(args)
 
     if args.analytics_disable:
         analytics = Analytics(permanently_disable=True)
@@ -984,6 +1005,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             plan_mode=args.plan,
             max_iterations=args.max_tool_iterations,
             permission_mode=args.permission_mode,
+            offline=args.offline,
         )
 
     try:

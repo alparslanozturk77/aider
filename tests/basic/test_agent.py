@@ -1908,6 +1908,11 @@ class TestSshTool(unittest.TestCase):
         )
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
+        # Gerçek ~/.ssh/known_hosts okunmasın: testin sonucu makinede hangi
+        # sunuculara bağlanılmış olduğuna bağlı olamaz.
+        self.kh = patch("aider.agent.ssh_tool.known_hosts_dosyasi", return_value=[])
+        self.kh.start()
+        self.addCleanup(self.kh.stop)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -1927,12 +1932,80 @@ class TestSshTool(unittest.TestCase):
         with self.assertRaises(ToolError):
             self.tool.run(self.ctx, host="skyup.kurum.local", command="df -h")
 
-    def test_unknown_alias_is_rejected_and_lists_known_ones(self):
-        with self.assertRaises(ToolError) as cm:
-            self.tool.run(self.ctx, host="yokboyle", command="df -h")
-        mesaj = str(cm.exception)
-        self.assertIn("skyup", mesaj)
-        self.assertIn("fedora", mesaj)
+    def test_bilinen_fqdn_reddedilmez(self):
+        # known_hosts sıklıkla FQDN tutuyor; bilinen bir ada alan adı eklenmiş
+        # muamelesi yapmak yanlış olur.
+        with patch("aider.agent.ssh_tool.known_hosts_dosyasi", return_value=["srv.kurum.local"]):
+            with patch("subprocess.run") as sahte:
+                sahte.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+                self.tool.run(self.ctx, host="srv.kurum.local", command="uptime")
+            sahte.assert_called_once()
+
+    def test_bilinmeyen_ad_reddedilmez_sorulur(self):
+        """Bilinmeyen ad artık tümden reddedilmiyor.
+
+        srvsatellite gibi public-key ile çalışan ve DNS'te çözülen bir sunucu
+        hiçbir yapılandırma dosyasında görünmeyebilir; eski davranış bu tür
+        sunucuları tümden engelliyordu.
+        """
+        with patch("subprocess.run") as sahte:
+            sahte.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            self.tool.run(self.ctx, host="srvsatellite", command="hammer ping")
+        sahte.assert_called_once()
+        sorular = [c.args[0] for c in self.ctx.io.confirm_ask.call_args_list if c.args]
+        self.assertTrue(any("bilinen sunucular arasında yok" in s for s in sorular), sorular)
+
+    def test_bilinmeyen_ad_onaylanmazsa_baglanmaz(self):
+        ctx = make_ctx(self.root)
+        ctx.permissions = None
+        # Önce komut onayı sorulur (evet), sonra sunucu onayı (hayır).
+        ctx.io.confirm_ask.side_effect = [True, False]
+        with patch("subprocess.run") as sahte:
+            out = self.tool.run(ctx, host="yokboyle", command="df -h")
+        sahte.assert_not_called()
+        self.assertIn("skyup", out)
+        self.assertIn("fedora", out)
+        self.assertNotIn("yokboyle", ctx.onaylanan_sunucular)
+
+    def test_onaylanan_ad_ikinci_kez_sorulmaz(self):
+        with patch("subprocess.run") as sahte:
+            sahte.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            self.tool.run(self.ctx, host="srvsatellite", command="uptime")
+            ilk = self.ctx.io.confirm_ask.call_count
+            self.tool.run(self.ctx, host="srvsatellite", command="df -h")
+            ikinci = self.ctx.io.confirm_ask.call_count
+        # İkinci çağrıda yalnızca komut onayı sorulmalı, sunucu onayı değil.
+        self.assertEqual(ikinci - ilk, 1)
+        self.assertIn("srvsatellite", self.ctx.onaylanan_sunucular)
+
+    def test_envanterdeki_host_bilinen_sayilir(self):
+        (self.root / "hosts-uretim.ini").write_text(
+            "[web]\nweb01 ansible_host=10.0.0.11\n\n[web:vars]\nansible_user=root\n"
+        )
+        with patch("subprocess.run") as sahte:
+            sahte.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            self.tool.run(self.ctx, host="web01", command="uptime")
+        sorular = [c.args[0] for c in self.ctx.io.confirm_ask.call_args_list if c.args]
+        self.assertFalse(any("bilinen sunucular arasında yok" in s for s in sorular), sorular)
+
+    def test_envanter_degiskeni_host_sanilmaz(self):
+        from aider.agent.ssh_tool import envanter_hostlari
+
+        (self.root / "hosts.ini").write_text(
+            "[web]\nweb01\n\n[web:vars]\nansible_user=root\n"
+        )
+        adlar = envanter_hostlari(self.root)
+        self.assertIn("web01", adlar)
+        self.assertNotIn("ansible_user=root", adlar)
+
+    def test_yaml_envanteri_okunur(self):
+        from aider.agent.ssh_tool import envanter_hostlari
+
+        (self.root / "hosts.yml").write_text(
+            "all:\n  children:\n    web:\n      hosts:\n        web02:\n"
+            "          ansible_host: 10.0.0.12\n"
+        )
+        self.assertIn("web02", envanter_hostlari(self.root))
 
     def test_empty_host_rejected(self):
         with self.assertRaises(ToolError):
@@ -2379,3 +2452,95 @@ General Options:
         self.assertLess(toplam, beceri_uret.TOPLAM_REFERANS_BUTCESI * 1.2)
         for _ad2, metin in bulgu["alt"]:
             self.assertIn("kırpıldı", metin)
+
+
+class TestCevrimdisiMod(unittest.TestCase):
+    """Hava boşluklu kurum sunucusu için ağ davranışlarının kapatılması.
+
+    Ölçülen sorun: --check-update varsayılan açık ve altındaki requests.get'in
+    zaman aşımı yok; ağ yoksa açılış işletim sisteminin TCP zaman aşımı kadar
+    bekliyor. Analitik ise açılışta etkinleşip dışarı olay gönderiyor.
+    """
+
+    def test_offline_ag_davranislarini_kapatir(self):
+        from aider.args import get_parser
+        from aider.main import cevrimdisi_uygula
+
+        args = cevrimdisi_uygula(get_parser([], None).parse_args(["--offline"]))
+        self.assertFalse(args.check_update)
+        self.assertFalse(args.just_check_update)
+        self.assertFalse(args.analytics)
+        self.assertFalse(args.detect_urls)
+
+    def test_offline_verilmezse_hicbir_sey_degismez(self):
+        from aider.args import get_parser
+        from aider.main import cevrimdisi_uygula
+
+        args = cevrimdisi_uygula(get_parser([], None).parse_args([]))
+        self.assertTrue(args.check_update)
+
+
+class TestMCPCevrimdisi(unittest.TestCase):
+    """Ağdan paket indiren MCP sunucuları çevrimdışında başlatılmamalı."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        (self.root / ".mcp.json").write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "postgres": {
+                            "command": "npx",
+                            "args": ["-y", "@modelcontextprotocol/server-postgres"],
+                        }
+                    }
+                }
+            )
+        )
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_npx_sunucusu_baslatilmaz(self):
+        from aider.agent.mcp import MCPManager
+
+        yonetici = MCPManager(MagicMock(), str(self.root), offline=True)
+        with patch("subprocess.Popen") as sahte:
+            araclar = yonetici.load()
+        sahte.assert_not_called()
+        self.assertEqual(araclar, [])
+        self.assertTrue(any("ağdan indirir" in e for e in yonetici.errors), yonetici.errors)
+
+    def test_cevrimici_modda_baslatilmaya_calisilir(self):
+        from aider.agent.mcp import MCPError, MCPManager
+
+        yonetici = MCPManager(MagicMock(), str(self.root), offline=False)
+        with patch("aider.agent.mcp.MCPServer.start", side_effect=MCPError("dursun")) as sahte:
+            yonetici.load()
+        # Çevrimdışı olmayan modda sunucu ELENMEZ; başlatılmaya çalışılır.
+        sahte.assert_called_once()
+        self.assertFalse(any("ağdan indirir" in e for e in yonetici.errors), yonetici.errors)
+
+
+class TestVoiceCevrimdisi(unittest.TestCase):
+    """Çevrimdışı modda ses kaydı dışarı gönderilmemeli.
+
+    aider/voice.py litellm.transcription'a api_base geçirmiyor; OPENAI_API_BASE
+    boşsa kayıt doğrudan api.openai.com'a gider.
+    """
+
+    def test_offline_modda_voice_reddedilir(self):
+        from aider.commands import Commands
+
+        io = MagicMock()
+        coder = MagicMock()
+        coder.offline = True
+        komutlar = Commands(io, coder)
+        komutlar.voice = None
+
+        with patch("aider.voice.Voice") as sahte:
+            komutlar.cmd_voice("")
+        sahte.assert_not_called()
+        hatalar = [c.args[0] for c in io.tool_error.call_args_list if c.args]
+        self.assertTrue(any("Çevrimdışı" in h for h in hatalar), hatalar)
