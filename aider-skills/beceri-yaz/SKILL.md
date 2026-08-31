@@ -72,8 +72,19 @@ Model internete çıkamıyorsa, bilmediği bir aracın sözdizimini **arayamaz**
 uydurur. `hammer`, `ipa`, `subscription-manager` gibi araçlarda bu, çalışmayan
 ya da yanlış şey yapan komutlar demektir.
 
-Referansı hafızadan değil, aracın kendi `--help` çıktısından üret ve her
-salt-okunur komutu gerçek sunucuda çalıştırarak doğrula. Tam yordam
+Referansı hafızadan değil, aracın kendi `--help` çıktısından üret. Bunu elle
+yapma — komut zaten var:
+
+```
+/beceri-uret hammer --host satellite --ad satellite-hammer
+```
+
+`--help` ağacını gezer, ham çıktıyı `aider-skills/<ad>/referans/yardim.md`
+dosyasına yazar ve `SKILL.md` iskeletini kurar. Sen yalnızca gövdeyi
+doldurursun; komutları referanstan alırsın, uydurmazsın. `--host` verilirse
+program uzak sunucuda aranır.
+
+Sonra her salt-okunur komutu gerçek sunucuda çalıştırarak doğrula; tam yordam
 `beceri-gelistir` becerisinde.
 
 Asıl değer komut listesinde değil, **çıktının nasıl okunacağında**: hangi alan

@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from aider.agent import beceri_uret
 from aider.agent.plan import ExitPlanModeTool
 from aider.agent.registry import ToolContext, ToolError, ToolRegistry
 from aider.agent.skills import SkillLibrary, SkillTool, _parse_frontmatter
@@ -2070,3 +2071,208 @@ class TestEmptyModelReply(unittest.TestCase):
             list(coder.send_message("bir şey yap"))
         mesajlar = [c.args[0] for c in uyari.call_args_list if c.args]
         self.assertFalse(any("boş yanıt" in m for m in mesajlar))
+
+
+class TestBeceriUret(unittest.TestCase):
+    """`--help` çıktısından beceri üretimi.
+
+    Gerçek program çalıştırılmıyor: `calistir` yerine sahte bir çağrılabilir
+    veriliyor, böylece testler makinede hangi araçların kurulu olduğuna
+    bağlı kalmıyor.
+    """
+
+    PIP_YARDIM = """
+Usage:
+  pip <command> [options]
+
+Commands:
+  install                     Install packages.
+  uninstall                   Uninstall packages.
+  freeze                      Output installed packages.
+
+General Options:
+  -h, --help                  Show help.
+  -v, --verbose               Give more output.
+"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _calistirici(self, yardim=None, surum="arac 1.2.3", host=None):
+        yardim = self.PIP_YARDIM if yardim is None else yardim
+
+        class Sahte:
+            nerede = host or "yerel makine"
+
+            def var_mi(self, program):
+                return True
+
+            def __call__(self, argv):
+                if argv[-1] in ("--version", "-V", "version"):
+                    return 0, surum + "\n"
+                if argv[-1] in ("--help", "-h", "help"):
+                    if len(argv) == 2:
+                        return 0, yardim
+                    return 0, f"{argv[1]} {argv[-2]} kullanımı: uzun bir yardım metni.\n"
+                return 1, ""
+
+        return Sahte()
+
+    # --- ayrıştırma ---------------------------------------------------------
+
+    def test_alt_komutlar_baslik_altindan_toplanir(self):
+        adlar = beceri_uret.alt_komutlari_ayikla(self.PIP_YARDIM)
+        self.assertEqual(adlar, ["install", "uninstall", "freeze"])
+
+    def test_secenekler_alt_komut_sayilmaz(self):
+        adlar = beceri_uret.alt_komutlari_ayikla(self.PIP_YARDIM)
+        for istenmeyen in ("h", "help", "v", "verbose"):
+            self.assertNotIn(istenmeyen, adlar)
+
+    def test_girintisiz_grup_basligi_listeyi_bitirmez(self):
+        # git komutlarını girintisiz grup başlıkları altında listeliyor; her
+        # girintisiz satırda durmak listeyi tamamen kaçırıyordu.
+        metin = (
+            "These are common Git commands used in various situations:\n"
+            "\n"
+            "start a working area (see also: git help tutorial)\n"
+            "   clone      Clone a repository\n"
+            "\n"
+            "grow, mark and tweak your history\n"
+            "   commit     Record changes\n"
+        )
+        self.assertEqual(beceri_uret.alt_komutlari_ayikla(metin), ["clone", "commit"])
+
+    def test_argparse_kumesi_ayiklanir(self):
+        metin = "positional arguments:\n  {list,show,add}\n"
+        self.assertEqual(beceri_uret.alt_komutlari_ayikla(metin), ["list", "show", "add"])
+
+    def test_alt_komut_sayisi_sinirli(self):
+        satirlar = "Commands:\n" + "".join(f"  komut{i}   açıklama\n" for i in range(60))
+        self.assertEqual(len(beceri_uret.alt_komutlari_ayikla(satirlar)), 25)
+
+    # --- sürüm --------------------------------------------------------------
+
+    def test_surum_hata_ciktisini_surum_sanmaz(self):
+        # Ölçülen gerçek davranış: `git -V` "unknown option: -V" deyip uzun bir
+        # kullanım metni basıyor. Uzunluğa bakan eski ölçüt bunu sürüm sanıyordu.
+        def calistir(argv):
+            if argv[-1] == "--version":
+                return 0, "git version 2.50.1\n"
+            if argv[-1] == "-V":
+                return 129, "unknown option: -V\n" + "usage: git ...\n" * 20
+            return 1, ""
+
+        self.assertEqual(beceri_uret._surum_bul(calistir, "git"), "git version 2.50.1")
+
+    def test_basarisiz_surum_komutu_yok_sayilir(self):
+        def calistir(argv):
+            return 1, "bilinmeyen seçenek\n" * 10
+
+        self.assertIsNone(beceri_uret._surum_bul(calistir, "arac"))
+
+    # --- üretim -------------------------------------------------------------
+
+    def test_referans_ve_iskelet_yazilir(self):
+        ad, bulgu, yazilan = beceri_uret.uret(
+            self.root, "pip", calistir=self._calistirici()
+        )
+        self.assertEqual(ad, "pip")
+        self.assertEqual([a for a, _ in bulgu["alt"]], ["install", "uninstall", "freeze"])
+
+        referans = self.root / "aider-skills" / "pip" / "referans" / "yardim.md"
+        skill_md = self.root / "aider-skills" / "pip" / "SKILL.md"
+        self.assertTrue(referans.is_file())
+        self.assertTrue(skill_md.is_file())
+        self.assertEqual(sorted(y.name for y in yazilan), ["SKILL.md", "yardim.md"])
+
+        # Referans ham çıktının kendisi olmalı, özeti değil.
+        self.assertIn("Install packages.", referans.read_text(encoding="utf-8"))
+
+    def test_uretilen_iskelet_beceri_olarak_bulunur(self):
+        beceri_uret.uret(self.root, "pip", calistir=self._calistirici())
+        lib = SkillLibrary([self.root / "aider-skills"])
+        self.assertIn("pip", lib.skills)
+        # İskelet referans dosyasını göstermeli; model komutu oradan okuyacak.
+        self.assertIn("referans/yardim.md", lib.skills["pip"].body)
+
+    def test_var_olan_beceri_ezilmez(self):
+        skill_md = self.root / "aider-skills" / "pip" / "SKILL.md"
+        skill_md.parent.mkdir(parents=True)
+        skill_md.write_text("---\nname: pip\ndescription: elle yazıldı\n---\n\nEMEK\n")
+
+        _ad, _bulgu, yazilan = beceri_uret.uret(
+            self.root, "pip", calistir=self._calistirici()
+        )
+        self.assertIn("EMEK", skill_md.read_text(encoding="utf-8"))
+        self.assertEqual([y.name for y in yazilan], ["yardim.md"])
+
+    def test_beceri_adi_verilebilir(self):
+        ad, _bulgu, _yazilan = beceri_uret.uret(
+            self.root, "pip", ad="paket-yonetimi", calistir=self._calistirici()
+        )
+        self.assertEqual(ad, "paket-yonetimi")
+        self.assertTrue((self.root / "aider-skills" / "paket-yonetimi" / "SKILL.md").is_file())
+
+    def test_kabuk_karakterli_program_adi_reddedilir(self):
+        # Uzak sunucuda komut satırı dizge olarak kuruluyor; ad doğrulaması
+        # enjeksiyona karşı ilk savunma.
+        for kotu in ("rm -rf /", "pip; whoami", "../bin/pip", "$(id)"):
+            with self.assertRaises(beceri_uret.UretimHatasi):
+                beceri_uret.uret(self.root, kotu, calistir=self._calistirici())
+
+    def test_olmayan_program_hata_verir(self):
+        class Sahte:
+            nerede = "sunucu"
+
+            def var_mi(self, program):
+                return False
+
+            def __call__(self, argv):
+                return 127, "command not found"
+
+        with self.assertRaises(beceri_uret.UretimHatasi):
+            beceri_uret.uret(self.root, "hammer", calistir=Sahte())
+
+    def test_yardim_vermeyen_program_hata_verir(self):
+        class Sahte:
+            nerede = "yerel makine"
+
+            def var_mi(self, program):
+                return True
+
+            def __call__(self, argv):
+                return 1, "kısa"
+
+        with self.assertRaises(beceri_uret.UretimHatasi):
+            beceri_uret.uret(self.root, "arac", calistir=Sahte())
+
+    def test_referans_butcesi_asilmaz(self):
+        uzun = "Commands:\n" + "".join(f"  komut{i}   açıklama\n" for i in range(25))
+
+        class Sahte:
+            nerede = "yerel makine"
+
+            def var_mi(self, program):
+                return True
+
+            def __call__(self, argv):
+                if argv[-1] == "--version":
+                    return 0, "arac 1.0\n"
+                if argv[-1] == "--help":
+                    if len(argv) == 2:
+                        return 0, uzun
+                    return 0, "x" * 50_000
+                return 1, ""
+
+        _ad, bulgu, _y = beceri_uret.uret(self.root, "arac", calistir=Sahte())
+
+        self.assertTrue(bulgu["atlanan"], "bütçe dolunca kalan alt komutlar atlanmalı")
+        toplam = len(bulgu["kok"]) + sum(len(m) for _a, m in bulgu["alt"])
+        self.assertLess(toplam, beceri_uret.TOPLAM_REFERANS_BUTCESI * 1.2)
+        for _ad2, metin in bulgu["alt"]:
+            self.assertIn("kırpıldı", metin)

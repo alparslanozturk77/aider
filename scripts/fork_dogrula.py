@@ -344,7 +344,7 @@ def _check_commands():
 
     gerekli = [
         "agent", "plan", "mod", "skills", "mcp", "permissions",
-        "todo", "hatirla", "bellek", "unut", "model_ekle",
+        "todo", "hatirla", "bellek", "unut", "model_ekle", "beceri_uret",
     ]
     eksik = [k for k in gerekli if not hasattr(Commands, f"cmd_{k}")]
     if eksik:

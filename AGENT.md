@@ -275,6 +275,24 @@ Aranan dizinler, öncelik sırasıyla:
 Aynı isim birden fazla yerde varsa **ilk kök kazanır**. Sıra bilinçli: paylaşılan
 bir beceriyi lokalde geçici olarak ezebilirsin.
 
+### Programın kendi yardımından beceri üretme
+
+Çevrimdışı bir model bilmediği aracın sözdizimini arayamaz, uydurur.
+`/beceri-uret` referansı aracın kendisinden toplar:
+
+```
+/beceri-uret hammer --host satellite --ad satellite-hammer
+```
+
+`<program> --help` ağacını gezer (alt komutlar dahil), ham çıktıyı
+`aider-skills/<ad>/referans/yardim.md` dosyasına yazar, `SKILL.md` iskeletini
+oluşturur ve gövdeyi doldurma işini modele devreder. Model komutları
+hafızadan değil bu referanstan alır.
+
+`--host` verirsen program uzak sunucuda aranır; sunucu adı `~/.ssh/config`'e
+karşı doğrulanır. Var olan bir `SKILL.md`'nin üstüne yazılmaz, yalnızca
+referans tazelenir.
+
 Yeni beceri oluşturmak için `/skills new <ad>` — iskeleti `aider-skills/`
 altına, yani depoya girebilen konuma yazar. `/skills` ile diskten yeniden
 yükleyip aider'ı kapatmadan test edersin.
@@ -419,6 +437,7 @@ Oturum içinde `/plan` ile açıp kapatabilirsin.
 | `/plan` | Plan modunu açar/kapatır |
 | `/skills` | Becerileri listeler ve diskten yeniden yükler |
 | `/skills new <ad>` | Yeni beceri iskeleti oluşturur |
+| `/beceri-uret <program>` | Programın `--help` ağacından beceri + komut referansı üretir |
 | `/mcp` | MCP sunucularını ve araçlarını listeler |
 | `/mcp reload` | MCP sunucularını yeniden başlatır |
 | `/permissions` | İzin modunu ve kurallarını gösterir |

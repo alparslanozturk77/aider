@@ -1294,6 +1294,101 @@ Sonucun kullanıcıya nasıl sunulacağını tarif et.
         self.io.tool_output(f"Beceri oluşturuldu: {skill_md}")
         self.io.tool_output("Düzenledikten sonra /skills ile yeniden yükle.")
 
+    def cmd_beceri_uret(self, args):
+        """Programın --help ağacından beceri iskeleti üretir: /beceri-uret <program> [--host <sunucu>] [--ad <beceri>]"""  # noqa
+        coder = self._require_agent()
+        if not coder:
+            return
+
+        from aider.agent.beceri_uret import UretimHatasi, uret
+
+        program = host = ad = None
+        parcalar = args.split()
+        i = 0
+        while i < len(parcalar):
+            parca = parcalar[i]
+            if parca in ("--host", "--sunucu"):
+                i += 1
+                host = parcalar[i] if i < len(parcalar) else None
+            elif parca == "--ad":
+                i += 1
+                ad = parcalar[i] if i < len(parcalar) else None
+            elif program is None:
+                program = parca
+            i += 1
+
+        if not program:
+            self.io.tool_error(
+                "Kullanım: /beceri-uret <program> [--host <sunucu>] [--ad <beceri-adı>]"
+            )
+            self.io.tool_output("Örnek: /beceri-uret hammer --host satellite --ad satellite-hammer")
+            return
+
+        # Sunucu adı doğrulaması Ssh aracıyla aynı kaynaktan: model gibi
+        # kullanıcı da olmayan bir takma ad yazabilir ve ssh 5 saniye bekler.
+        if host:
+            from aider.agent.ssh_tool import known_hosts
+
+            tanimli = known_hosts()
+            if host not in tanimli:
+                self.io.tool_error(
+                    f"'{host}' ~/.ssh/config içinde tanımlı değil. "
+                    f"Tanımlı adlar: {', '.join(tanimli) or '(yok)'}"
+                )
+                return
+
+        self.io.tool_output(f"{program} yardım ağacı taranıyor ({host or 'yerel makine'})...")
+        try:
+            ad, bulgu, yazilan = uret(
+                coder.root,
+                program,
+                host=host,
+                ad=ad,
+                bildir=lambda mesaj: self.io.tool_output(f"  {mesaj}"),
+            )
+        except UretimHatasi as err:
+            self.io.tool_error(str(err))
+            return
+        except OSError as err:
+            self.io.tool_error(f"Beceri üretilemedi: {err}")
+            return
+
+        self.io.tool_output()
+        self.io.tool_output(
+            f"{len(bulgu['alt'])} alt komutun yardımı toplandı"
+            + (f", {len(bulgu['yardimsiz'])} tanesi yardım vermedi" if bulgu["yardimsiz"] else "")
+        )
+        for yol in yazilan:
+            self.io.tool_output(f"  yazıldı: {yol}")
+
+        coder.ctx.skills.load()
+
+        iskelet_yazildi = any(yol.name == "SKILL.md" for yol in yazilan)
+        if not iskelet_yazildi:
+            self.io.tool_output()
+            self.io.tool_output(
+                f"'{ad}' becerisinin SKILL.md'si zaten vardı, üstüne yazılmadı; "
+                "yalnızca referans tazelendi."
+            )
+            return
+
+        referans = next(yol for yol in yazilan if yol.name == "yardim.md")
+        skill_md = next(yol for yol in yazilan if yol.name == "SKILL.md")
+
+        # Dönen metin modele gider: iskeleti kullanıcı değil model doldurur.
+        return (
+            f"'{ad}' becerisinin iskeleti {skill_md} dosyasına yazıldı; `{program}` aracının"
+            f" gerçek yardım çıktısı ise {referans} dosyasında duruyor.\n\n"
+            "Şimdi şunu yap:\n"
+            f"1. {referans} dosyasını Read ile oku.\n"
+            f"2. {skill_md} içindeki DOLDUR başlıklarını gerçek içerikle değiştir ve"
+            " dosyayı Write ile kaydet.\n"
+            "3. description alanı becerinin NE ZAMAN tetikleneceğini ve kullanıcının"
+            " yazacağı tetikleyici kelimeleri içersin.\n\n"
+            "Komut sözdizimini yalnızca referans dosyasından al, hafızandan yazma."
+            " Referansta olmayan bir komutu beceriye koyma."
+        )
+
     def cmd_mcp(self, args):
         """Bağlı MCP sunucularını ve araçlarını listeler. Yeniden başlat: /mcp reload"""  # noqa
         coder = self._require_agent()

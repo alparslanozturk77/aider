@@ -31,6 +31,7 @@ aider/agent/
   permissions.py  Üç katmanlı izin sistemi (deny / ask / allow)
   mcp.py          MCP istemcisi (stdio, JSON-RPC 2.0)
   skills.py       SKILL.md keşfi ve kademeli açılım
+  beceri_uret.py  Programın --help ağacından beceri + referans üretimi
   todo.py         Görev listesi
   plan.py         Plan modu
   model_setup.py  /model-ekle akışı
@@ -52,7 +53,7 @@ değiştirmek zorunda kalırsan yamayı en küçük blokta tut ve nedenini yorum
 | `aider/args.py` | `--agent`, `--plan`, `--auto`, `--permission-mode`, `--max-tool-iterations` |
 | `aider/main.py` | Agent kwarg'larının yalnızca agent coder'a geçirilmesi |
 | `aider/io.py` | Mod göstergesi kancaları ve `shift+tab` |
-| `aider/commands.py` | On bir slash komutu |
+| `aider/commands.py` | On iki slash komutu |
 | `.gitignore` | `.env` ve `.mcp.json` ignore |
 | `README.md` | Fork'un kendi ön yüzü; upstream'inki `ORIJINAL-README.md` |
 
@@ -190,6 +191,9 @@ kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 (beceri + izin kuralları). Aider fork'unun parçası değil, kopyalanacak örnek.
 
 Yeni beceri: `/skills new <ad>` — iskeleti `aider-skills/` altına yazar.
+Var olan bir programdan beceri: `/beceri-uret <program> [--host <sunucu>]` —
+aracın `--help` ağacını gezip ham çıktıyı `referans/yardim.md`'ye yazar,
+gövdeyi model doldurur. Çevrimdışı modelin komut uydurmasına karşı.
 
 ## Ses girişi
 
