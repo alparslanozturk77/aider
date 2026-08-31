@@ -15,7 +15,7 @@ import subprocess
 from pathlib import Path
 
 from .registry import ToolError
-from .tools import Tool, _truncate
+from .tools import Tool, _truncate, cikti_siniri
 
 SSH_CONFIG = Path.home() / ".ssh" / "config"
 
@@ -151,4 +151,4 @@ class SshTool(Tool):
 
         # Komutu tekrar yazdırmıyoruz: hem araç çağrısı satırı hem onay istemi
         # zaten gösteriyor, üç kez tekrarlanıyordu.
-        return _truncate(cikti)
+        return _truncate(cikti, cikti_siniri(ctx))

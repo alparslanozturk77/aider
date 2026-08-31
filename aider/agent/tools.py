@@ -16,6 +16,33 @@ from .registry import ToolError
 MAX_OUTPUT_CHARS = 30_000
 DEFAULT_READ_LIMIT = 2000
 
+
+# Tek bir araç sonucunun bağlamın en fazla ne kadarını yiyebileceği. Ölçüldü:
+# "rpm -qa" 29.064, "journalctl -p err -n 100" 22.295 karakter — ikisi de
+# 30.000 sınırının altında kaldığı için OLDUĞU GİBİ geçiyor. 8k pencereli bir
+# modelde tek bir komut çıktısı bağlamın tamamını yiyor ve model boş dönüyor.
+CIKTI_BAGLAM_PAYI = 0.25
+KARAKTER_BASINA_TOKEN = 4
+
+
+def cikti_siniri(ctx):
+    """Modelin bağlam penceresine göre araç çıktısı üst sınırı.
+
+    Bağlam bilinmiyorsa (özel endpoint'lerde sık) eski davranış korunur;
+    tahmin edip küçük modelde çalışan bir şeyi bozmaktansa büyük sınırda
+    kalmak yeğdir.
+    """
+    try:
+        bilgi = ctx.coder.main_model.info or {}
+        pencere = bilgi.get("max_input_tokens")
+    except Exception:
+        pencere = None
+    if not pencere:
+        return MAX_OUTPUT_CHARS
+    pay = int(pencere * CIKTI_BAGLAM_PAYI) * KARAKTER_BASINA_TOKEN
+    return max(2_000, min(MAX_OUTPUT_CHARS, pay))
+
+
 # Grep/Glob taramalarında hiçbir zaman girilmeyecek dizinler.
 SKIP_DIRS = {
     ".git",
@@ -126,7 +153,7 @@ class ReadTool(PathTool):
 
         end = start + len(chunk) - 1
         header = f"{p} (satır {start}-{end}, toplam {len(lines)})"
-        return _truncate(f"{header}\n{body}")
+        return _truncate(f"{header}\n{body}", cikti_siniri(ctx))
 
 
 class WriteTool(PathTool):
@@ -291,7 +318,7 @@ class BashTool(Tool):
         out = (proc.stdout or "") + (proc.stderr or "")
         out = out.strip() or "(çıktı yok)"
         status = "" if proc.returncode == 0 else f"\n[çıkış kodu {proc.returncode}]"
-        return _truncate(out + status)
+        return _truncate(out + status, cikti_siniri(ctx))
 
 
 def _walk_files(root, glob_pat=None):
@@ -418,7 +445,7 @@ class GrepTool(Tool):
         kok = str(Path(ctx.root).resolve()) + os.sep
         lines = [ln.replace(kok, "") for ln in lines]
 
-        return _truncate("\n".join(lines))
+        return _truncate("\n".join(lines), cikti_siniri(ctx))
 
     def _python_fallback(self, ctx, pattern, target, glob, output_mode, case_insensitive):
         """ripgrep yoksa saf Python ile ara."""
