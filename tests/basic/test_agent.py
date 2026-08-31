@@ -2603,3 +2603,264 @@ class TestFiloyaDokunanKomutlar(unittest.TestCase):
             perms.decide("Bash", {"command": "ansible-playbook site.yml"}, mutating=True),
             ALLOW,
         )
+
+
+class TestBeceriTetikleme(unittest.TestCase):
+    """Becerilerin isteğe göre deterministik eşleştirilmesi.
+
+    Ölçülen arıza: 14 beceri yüklüyken gemma4:e4b "skyup sunucusuna bağlan ve
+    OS güncel mi diye bak" isteğinde Skill aracını bir kez bile çağırmadı.
+    Katalog sistem promptunda duruyordu ama 4B sınıfı bir model onlarca
+    satırdan doğru olanı seçip araç çağırmayı beceremiyor.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dizin = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _beceri(self, ad, aciklama, govde="GÖVDE", ek=""):
+        d = self.dizin / ad
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "SKILL.md").write_text(
+            f"---\nname: {ad}\ndescription: {aciklama}\n{ek}---\n\n{govde}\n",
+            encoding="utf-8",
+        )
+        return SkillLibrary([self.dizin])
+
+    # --- tetikleyici çıkarımı ----------------------------------------------
+
+    def test_tirnakli_ifadeler_tetikleyici_olur(self):
+        lib = self._beceri("ag-teshis", 'Ağ sorunları. "port", "firewall" isteklerinde.')
+        adlar = [t for t, _ in lib.get("ag-teshis").triggers]
+        self.assertIn("port", adlar)
+        self.assertIn("firewall", adlar)
+
+    def test_becerinin_adi_da_tetikleyicidir(self):
+        lib = self._beceri("selinux", 'AVC kayıtları. "avc" isteklerinde.')
+        self.assertIn("selinux", [t for t, _ in lib.get("selinux").triggers])
+
+    def test_frontmatter_triggers_aciklamayi_ezer(self):
+        lib = self._beceri(
+            "ozel", 'Bir şey. "tirnakli" isteklerinde.', ek="triggers: elma, armut\n"
+        )
+        adlar = [t for t, _ in lib.get("ozel").triggers]
+        self.assertIn("elma", adlar)
+        self.assertIn("armut", adlar)
+        self.assertNotIn("tirnakli", adlar)
+
+    def test_kisa_tetikleyiciler_atlanir(self):
+        lib = self._beceri("kisa", 'Bir şey. "ab", "cd", "uzun" isteklerinde.')
+        adlar = [t for t, _ in lib.get("kisa").triggers]
+        self.assertNotIn("ab", adlar)
+        self.assertIn("uzun", adlar)
+
+    # --- eşleştirme ---------------------------------------------------------
+
+    def test_turkce_karakter_farki_eslesmeyi_bozmaz(self):
+        lib = self._beceri("ag-teshis", 'Ağ. "bağlanamıyor" isteklerinde.')
+        # Kullanıcı Türkçe karakter kullanmadan da yazabilir.
+        self.assertTrue(lib.eslestir("sunucuya baglanamiyor"))
+        self.assertTrue(lib.eslestir("sunucuya bağlanamıyor"))
+
+    def test_ek_almis_kelime_eslesir(self):
+        lib = self._beceri("ansible", 'Ansible. "playbook" isteklerinde.')
+        self.assertTrue(lib.eslestir("playbook'u çalıştır"))
+        self.assertTrue(lib.eslestir("playbookları listele"))
+
+    def test_kelime_ortasinda_eslesmez(self):
+        lib = self._beceri("depolama", 'Disk. "mount" isteklerinde.')
+        # "paramount" içindeki "mount" tetiklememeli.
+        self.assertFalse(lib.eslestir("paramount pictures"))
+        self.assertTrue(lib.eslestir("mount edemiyorum"))
+
+    def test_eslesme_yoksa_bos_doner(self):
+        lib = self._beceri("ansible", 'Ansible. "playbook" isteklerinde.')
+        self.assertEqual(lib.eslestir("merhaba nasılsın"), [])
+        self.assertEqual(lib.eslestir(""), [])
+
+    def test_auto_false_beceri_otomatik_yuklenmez(self):
+        lib = self._beceri("elle", 'Bir şey. "elle" isteklerinde.', ek="auto: false\n")
+        self.assertIn("elle", lib.skills)
+        self.assertEqual(lib.eslestir("elle yapılacak iş"), [])
+        # Skill aracıyla elle yüklemek hâlâ mümkün olmalı.
+        ctx = make_ctx(self.dizin)
+        ctx.skills = lib
+        self.assertIn("GÖVDE", SkillTool().run(ctx, skill="elle"))
+
+    # --- sıralama -----------------------------------------------------------
+
+    def test_beceri_adi_genel_ifadeyi_yener(self):
+        """Ölçülen yanlış sıralama.
+
+        "ansible ile ... kontrol et" isteğinde kod-inceleme becerisi
+        ("kontrol et", 10 karakter) ansible'ı ("ansible", 7 karakter)
+        geçiyordu; en uzun eşleşmeye bakan sıralama yanlış beceriyi yüklüyordu.
+        """
+        (self.dizin / "ansible").mkdir()
+        (self.dizin / "ansible" / "SKILL.md").write_text(
+            '---\nname: ansible\ndescription: Ansible. "ansible" isteklerinde.\n---\n\nA\n'
+        )
+        (self.dizin / "kod-inceleme").mkdir()
+        (self.dizin / "kod-inceleme" / "SKILL.md").write_text(
+            '---\nname: kod-inceleme\ndescription: İnceleme. "kontrol et" isteklerinde.\n'
+            "---\n\nK\n"
+        )
+        lib = SkillLibrary([self.dizin])
+        ilk, _vurus = lib.eslestir("ansible ile ntp durumunu kontrol et", limit=1)[0]
+        self.assertEqual(ilk.name, "ansible")
+
+    def test_daha_uzman_beceri_esitligi_bozar(self):
+        # "hammer" iki beceride de var; az konu iddia eden kazanmalı.
+        (self.dizin / "genel").mkdir()
+        (self.dizin / "genel" / "SKILL.md").write_text(
+            '---\nname: genel\ndescription: Genel. "hammer", "ipa", "dnf", "repo",'
+            ' "servis" isteklerinde.\n---\n\nG\n'
+        )
+        (self.dizin / "uzman").mkdir()
+        (self.dizin / "uzman" / "SKILL.md").write_text(
+            '---\nname: uzman\ndescription: Uzman. "hammer" isteklerinde.\n---\n\nU\n'
+        )
+        lib = SkillLibrary([self.dizin])
+        ilk, _v = lib.eslestir("hammer ping çalıştır", limit=1)[0]
+        self.assertEqual(ilk.name, "uzman")
+
+    def test_cok_tetikleyici_tutan_one_gecer(self):
+        (self.dizin / "az").mkdir()
+        (self.dizin / "az" / "SKILL.md").write_text(
+            '---\nname: az\ndescription: Az. "nginx" isteklerinde.\n---\n\nA\n'
+        )
+        (self.dizin / "cok").mkdir()
+        (self.dizin / "cok" / "SKILL.md").write_text(
+            '---\nname: cok\ndescription: Çok. "nginx", "502", "gateway" isteklerinde.\n'
+            "---\n\nC\n"
+        )
+        lib = SkillLibrary([self.dizin])
+        ilk, _v = lib.eslestir("nginx 502 bad gateway", limit=1)[0]
+        self.assertEqual(ilk.name, "cok")
+
+    # --- depodaki gerçek beceriler -----------------------------------------
+
+    def test_gercek_isteklerde_dogru_beceri_secilir(self):
+        from aider.agent.skills import YERLESIK_BECERILER
+
+        lib = SkillLibrary([YERLESIK_BECERILER])
+        beklenen = {
+            "ansible ile tüm web sunucularında ntp durumunu kontrol et": "ansible",
+            "disk doldu, kim yiyor?": "depolama",
+            "selinux engelliyor galiba": "selinux",
+            "nginx 502 veriyor": "web-sunucu",
+            "bu değişikliği gözden geçir": "kod-inceleme",
+        }
+        for istek, ad in beklenen.items():
+            eslesme = lib.eslestir(istek, limit=1)
+            self.assertTrue(eslesme, f"{istek!r} hiçbir beceriyi tetiklemedi")
+            self.assertEqual(eslesme[0][0].name, ad, istek)
+
+    def test_selamlasma_beceri_tetiklemez(self):
+        from aider.agent.skills import YERLESIK_BECERILER
+
+        lib = SkillLibrary([YERLESIK_BECERILER])
+        for istek in ("merhaba", "teşekkürler", "tamam"):
+            self.assertEqual(lib.eslestir(istek), [], istek)
+
+
+class TestOtomatikBeceriEnjeksiyonu(unittest.TestCase):
+    """Eşleşen beceri gövdesi modele gerçekten ulaşmalı."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.prev_cwd = os.getcwd()
+        os.chdir(self.root)
+
+        beceriler = self.root / "aider-skills" / "ansible"
+        beceriler.mkdir(parents=True)
+        (beceriler / "SKILL.md").write_text(
+            '---\nname: ansible\ndescription: Ansible işleri. "ansible", "playbook"'
+            " isteklerinde tetiklenir.\n---\n\nÖNCE --list-hosts ÇALIŞTIR\n",
+            encoding="utf-8",
+        )
+
+    def tearDown(self):
+        os.chdir(self.prev_cwd)
+        self.tmp.cleanup()
+
+    def _coder(self, yanit, auto_skills=True):
+        from aider.coders import Coder
+        from aider.io import InputOutput
+        from aider.models import Model
+
+        coder = Coder.create(
+            main_model=Model("gpt-4o"),
+            edit_format="agent",
+            io=InputOutput(yes=True, pretty=False, fancy_input=False),
+            fnames=[],
+            use_git=False,
+            stream=False,
+            auto_skills=auto_skills,
+        )
+        coder.auto_lint = False
+        coder.auto_test = False
+        self.sent = []
+
+        def sahte(messages, functions, stream, temperature=None):
+            self.sent.append(list(messages))
+            return MagicMock(), FakeCompletion(FakeMessage(content=yanit))
+
+        coder.main_model.send_completion = sahte
+        return coder
+
+    def _son_kullanici_mesaji(self):
+        for msg in reversed(self.sent[0]):
+            if msg.get("role") == "user":
+                return msg.get("content") or ""
+        return ""
+
+    def test_eslesen_beceri_govdesi_modele_gider(self):
+        coder = self._coder("tamam")
+        list(coder.send_message("ansible ile ntp durumunu kontrol et"))
+        icerik = self._son_kullanici_mesaji()
+        self.assertIn("ÖNCE --list-hosts ÇALIŞTIR", icerik)
+        self.assertIn("OTOMATİK YÜKLENEN BECERİ", icerik)
+        # Kullanıcının kendi isteği kaybolmamalı.
+        self.assertIn("ntp durumunu kontrol et", icerik)
+
+    def test_arka_arkaya_iki_user_mesaji_olusmaz(self):
+        # Bazı sohbet şablonları (vLLM/Qwen) ardışık user mesajında bozuluyor.
+        coder = self._coder("tamam")
+        list(coder.send_message("ansible playbook çalıştır"))
+        roller = [m.get("role") for m in self.sent[0]]
+        for onceki, sonraki in zip(roller, roller[1:]):
+            self.assertFalse(onceki == sonraki == "user", roller)
+
+    def test_beceri_govdesi_kalici_gecmise_yazilmaz(self):
+        """Gövde yalnızca o turun mesaj listesine girmeli.
+
+        Kalıcı geçmişe yazılsaydı her turda birikip bağlamı beceri
+        metinleriyle doldururdu.
+        """
+        coder = self._coder("tamam")
+        list(coder.send_message("ansible playbook çalıştır"))
+        gecmis = "".join(str(m.get("content") or "") for m in coder.cur_messages)
+        self.assertNotIn("ÖNCE --list-hosts ÇALIŞTIR", gecmis)
+        self.assertIn("ansible playbook çalıştır", gecmis)
+
+    def test_eslesmeyen_istekte_hicbir_sey_eklenmez(self):
+        coder = self._coder("tamam")
+        list(coder.send_message("merhaba"))
+        self.assertNotIn("OTOMATİK YÜKLENEN BECERİ", self._son_kullanici_mesaji())
+
+    def test_kapatilabilir(self):
+        coder = self._coder("tamam", auto_skills=False)
+        list(coder.send_message("ansible playbook çalıştır"))
+        self.assertNotIn("OTOMATİK YÜKLENEN BECERİ", self._son_kullanici_mesaji())
+
+    def test_yuklenen_beceri_kullaniciya_bildirilir(self):
+        coder = self._coder("tamam")
+        with patch.object(coder.io, "tool_output") as cikti:
+            list(coder.send_message("ansible playbook çalıştır"))
+        satirlar = [c.args[0] for c in cikti.call_args_list if c.args]
+        self.assertTrue(any("Beceri otomatik yüklendi" in s for s in satirlar), satirlar)

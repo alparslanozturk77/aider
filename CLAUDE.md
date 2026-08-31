@@ -50,7 +50,7 @@ değiştirmek zorunda kalırsan yamayı en küçük blokta tut ve nedenini yorum
 |---|---|
 | `aider/models.py` | `send_completion` çok araçlı `tool_choice="auto"` destekliyor |
 | `aider/coders/__init__.py` | `AgentCoder` kaydı |
-| `aider/args.py` | `--agent`, `--plan`, `--auto`, `--permission-mode`, `--max-tool-iterations`, `--offline` |
+| `aider/args.py` | `--agent`, `--plan`, `--auto`, `--permission-mode`, `--max-tool-iterations`, `--offline`, `--auto-skills` |
 | `aider/main.py` | Agent kwarg'ları yalnızca agent coder'a; agent modunda repo map varsayılan kapalı |
 | `aider/io.py` | Mod göstergesi kancaları ve `shift+tab` |
 | `aider/commands.py` | On iki slash komutu; `/voice` çevrimdışı modda kapalı |
@@ -270,6 +270,25 @@ var; harita her isteğe yeniden giriyor ve sohbete dosya eklenmemişken
 **Bellek ve proje talimatı bütçeleri pencereye göre ölçekleniyor.** Sabit
 12.000 ve 20.000 karakter, 8k pencereli bir modelde iş yapacak yer
 bırakmıyordu; artık pencerenin yüzde 10'u ve 15'i, eski değerler tavan.
+
+## Beceri tetikleme deterministik
+
+Modelin `Skill` aracını kendiliğinden çağırmasını beklemek 4B sınıfında
+çalışmıyor — ölçüldü, gemma4:e4b 14 beceri yüklüyken aracı bir kez bile
+çağırmadı. Eşleştirme artık kodda: isteğin metni tetikleyici ifadelerle
+karşılaştırılıyor, en isabetli tek beceri o turun mesajına iliştiriliyor.
+
+Tetikleyiciler `description`'daki tırnak içi ifadelerden okunuyor; 37
+becerinin hepsi zaten öyle yazılmıştı, yani hiçbir beceri dosyası
+düzenlenmeden çalıştı.
+
+Gövde kalıcı geçmişe DEĞİL, yalnızca o turun mesaj listesine giriyor; yoksa
+her turda birikip bağlamı beceri metinleriyle doldurur. Ayrı bir mesaj değil,
+son kullanıcı mesajının sonuna iliştiriliyor: arka arkaya iki `user` mesajı
+bazı sohbet şablonlarını (vLLM/Qwen) bozuyor.
+
+Tetikleyici ayarlamak deneme gerektiriyor; `/skills tetik <istek>` modeli
+çalıştırmadan sıralamayı gösteriyor.
 
 ## Zayıf model dayanıklılığı
 

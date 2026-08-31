@@ -1006,6 +1006,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             max_iterations=args.max_tool_iterations,
             permission_mode=args.permission_mode,
             offline=args.offline,
+            auto_skills=args.auto_skills,
         )
 
     try:

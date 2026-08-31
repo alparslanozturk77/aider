@@ -27,10 +27,44 @@ import re
 from pathlib import Path
 
 from .registry import ToolError
-from .tools import Tool, _truncate
+from .tools import MAX_OUTPUT_CHARS, Tool, _truncate
 
 SKILL_FILE = "SKILL.md"
 _FRONTMATTER = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?(.*)\Z", re.DOTALL)
+
+# Açıklamalardaki tırnak içi tetikleyici kelimeler. Otuz yedi becerinin
+# hepsi zaten bu biçimde yazılmış ("ansible", "playbook", ...), o yüzden
+# ayrı bir alan doldurmak gerekmiyor; frontmatter'daki `triggers:` yalnızca
+# bunu ezmek isteyen beceriler için.
+_TIRNAK = re.compile(r'["“”]([^"“”\n]{2,60})["“”]')
+
+# Türkçe harfleri ASCII'ye indirger. İki yönlü fayda: "bağlanamıyor" ile
+# "baglanamiyor" aynı kelimeye iner, yani kullanıcı Türkçe karakter
+# kullanmadan yazsa da eşleşme tutar.
+_TR = str.maketrans(
+    {
+        "ı": "i", "İ": "i", "I": "i", "ğ": "g", "Ğ": "g", "ü": "u", "Ü": "u",
+        "ş": "s", "Ş": "s", "ö": "o", "Ö": "o", "ç": "c", "Ç": "c", "â": "a", "î": "i",
+    }
+)
+
+# Bundan kısa tetikleyiciler eşleştirmede kullanılmaz: iki harflik bir dizge
+# rastgele kelimelerin içine düşüyor.
+MIN_TETIKLEYICI = 3
+
+
+def normalize(text):
+    return (text or "").translate(_TR).lower()
+
+
+def _tetikleyici_regex(ifade):
+    """Kelime başına demirleyen desen.
+
+    Sağ sınır YOK: Türkçe ekler kelimeye bitişik yazılıyor ve "playbook'u",
+    "ansible'da" gibi biçimlerin eşleşmesi gerekiyor. Sol sınır ise şart,
+    yoksa tetikleyici rastgele kelimelerin ortasına düşüyor.
+    """
+    return re.compile(r"(?<![a-z0-9])" + re.escape(ifade))
 
 
 def _parse_frontmatter(text):
@@ -55,16 +89,22 @@ def _parse_frontmatter(text):
 
 
 class Skill:
-    def __init__(self, name, description, path, body):
+    def __init__(self, name, description, path, body, triggers=None, auto=True):
         self.name = name
         self.description = description
         self.path = path
         self.body = body
+        self.auto = auto
+        # (ham ifade, derlenmiş desen) çiftleri
+        self.triggers = triggers or []
 
-    def render(self):
+    def render(self, limit=MAX_OUTPUT_CHARS):
         """Modele verilecek tam beceri metni."""
         header = f"# Beceri: {self.name}\n\nKaynak: {self.path}\n"
-        return _truncate(f"{header}\n{self.body.strip()}")
+        return _truncate(f"{header}\n{self.body.strip()}", limit)
+
+    def eslesen_tetikleyiciler(self, normalize_metin):
+        return [ham for ham, desen in self.triggers if desen.search(normalize_metin)]
 
 
 class SkillLibrary:
@@ -95,7 +135,14 @@ class SkillLibrary:
         desc = meta.get("description", "").strip()
         if not desc:
             return None  # açıklamasız beceri tetiklenemez, atla
-        return Skill(name, desc, path, body)
+        return Skill(
+            name,
+            desc,
+            path,
+            body,
+            triggers=_tetikleyicileri_cikar(meta, desc, name),
+            auto=str(meta.get("auto", "true")).strip().lower() not in ("false", "hayir", "hayır"),
+        )
 
     def catalog(self):
         """Sistem promptuna gömülecek kısa liste."""
@@ -106,6 +153,71 @@ class SkillLibrary:
 
     def get(self, name):
         return self.skills.get(name)
+
+    def eslestir(self, metin, limit=1):
+        """Kullanıcı mesajına uyan becerileri en iyiden başlayarak döndür.
+
+        Modelin karar vermesini beklemiyoruz. Ölçüldü: 14 beceri yüklüyken
+        gemma4:e4b "OS güncel mi" isteğinde Skill aracını bir kez bile
+        çağırmadı. Katalog sistem promptunda duruyor ama 4B sınıfı bir model
+        onlarca satırdan doğru olanı seçip araç çağırmayı beceremiyor.
+
+        [(beceri, eşleşen tetikleyiciler)] döndürür.
+        """
+        norm = normalize(metin)
+        if not norm.strip():
+            return []
+
+        skorlar = []
+        for skill in self.skills.values():
+            if not skill.auto:
+                continue
+            vurus = skill.eslesen_tetikleyiciler(norm)
+            if vurus:
+                # Eşitlik bozucu: az tetikleyicili beceri daha uzmandır.
+                # "hammer" hem rhel-yonetim'de hem satellite-yonetim'de var;
+                # ikincisi daha az konu iddia ettiği için o kazanmalı.
+                skorlar.append((self._puan(skill, vurus), -len(skill.triggers), skill, vurus))
+
+        skorlar.sort(key=lambda s: (s[0], s[1]), reverse=True)
+        return [(s[2], s[3]) for s in skorlar[:limit]]
+
+    @staticmethod
+    def _puan(skill, vurus):
+        """Eşleşmenin isabet puanı.
+
+        Becerinin kendi adının geçmesi en güçlü sinyal: kullanıcı "ansible ile
+        ... kontrol et" dediğinde aracı adıyla anmıştır. Ad ağırlığı olmadan
+        genel bir ifade ("kontrol et", 10 karakter) becerinin adını
+        ("ansible", 7 karakter) geçiyordu ve yanlış beceri yükleniyordu.
+        """
+        ad = normalize(skill.name)
+        puan = 10 * len(vurus) + max(len(v) for v in vurus)
+        if ad in vurus:
+            puan += 50
+        return puan
+
+
+def _tetikleyicileri_cikar(meta, description, name):
+    """Frontmatter'daki `triggers:` yoksa açıklamadaki tırnaklı ifadelerden üret."""
+    ham = meta.get("triggers") or meta.get("tetikleyiciler")
+    if ham:
+        ifadeler = [p.strip() for p in ham.split(",")]
+    else:
+        ifadeler = _TIRNAK.findall(description)
+
+    # Becerinin kendi adı da tetikleyici: kullanıcı "selinux" ya da "ansible"
+    # yazdığında o beceriyi kastediyordur.
+    ifadeler.append(name)
+
+    cikti, gorulen = [], set()
+    for ifade in ifadeler:
+        norm = normalize(ifade).strip()
+        if len(norm) < MIN_TETIKLEYICI or norm in gorulen:
+            continue
+        gorulen.add(norm)
+        cikti.append((norm, _tetikleyici_regex(norm)))
+    return cikti
 
 
 # Depoya girebilen, paylaşılan beceri dizini. Gizli dizin değil, çünkü

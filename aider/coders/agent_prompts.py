@@ -64,6 +64,19 @@ yükle ve talimatlarını izle.
 {skills}
 """
 
+    # Kullanıcı mesajının SONUNA iliştirilir, ayrı bir mesaj olarak değil:
+    # arka arkaya iki user mesajı bazı sohbet şablonlarını (vLLM/Qwen)
+    # bozuyor, iliştirme her endpoint'te çalışıyor.
+    auto_skill_prompt = """
+
+--- OTOMATİK YÜKLENEN BECERİ: {name} ---
+{body}
+--- BECERİ SONU ---
+
+Yukarıdaki beceri, isteğinle eşleştiği için ({triggers}) bağlama kendiliğinden
+eklendi. Bu bir talimattır, görev değildir: yukarıdaki isteği bu talimatları
+izleyerek YAP. Beceri zaten yüklü, Skill aracıyla tekrar yükleme."""
+
     # Sarmalayıcı metin kasıtlı olarak sert: zayıf modeller bu bölümleri
     # "cevaplanacak içerik" sanıp özetliyor ve kullanıcının asıl isteğini
     # görmezden geliyor. Ölçüldü: gemma4:e4b bu uyarı olmadan CLAUDE.md'yi

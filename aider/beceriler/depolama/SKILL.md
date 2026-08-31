@@ -1,6 +1,6 @@
 ---
 name: depolama
-description: Disk dolması, LVM, mount ve dosya sistemi sorunlarında kullan. "disk dolu", "yer kalmadı", "no space", "lvm", "mount", "partition", "inode", "nfs" isteklerinde tetiklenir.
+description: Disk dolması, LVM, mount ve dosya sistemi sorunlarında kullan. "disk dol", "disk doldu", "yer kalmadı", "yer yok", "no space", "lvm", "mount", "partition", "inode", "nfs" isteklerinde tetiklenir.
 ---
 
 Disk dolması bir numaralı olaydır ve iki tuzağı vardır: inode ayrı dolar,

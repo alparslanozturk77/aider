@@ -57,6 +57,12 @@ MAX_BOS_DURTME = 1
 BELLEK_PAYI = 0.10
 TALIMAT_PAYI = 0.15
 
+# Otomatik yüklenen becerinin gövdesi için pay ve tavan. Tek beceri
+# yükleniyor; ikisi birden bağlamın yarısını yiyor ve model asıl isteği
+# kaybediyor.
+BECERI_PAYI = 0.25
+BECERI_TAVANI = 8_000
+
 
 class AgentCoder(Coder):
     """Claude Code tarzı araç döngüsü."""
@@ -68,6 +74,7 @@ class AgentCoder(Coder):
         self.plan_mode = kwargs.pop("plan_mode", False)
         self.max_iterations = kwargs.pop("max_iterations", DEFAULT_MAX_ITERATIONS)
         self.offline = kwargs.pop("offline", False)
+        self.otomatik_beceri = kwargs.pop("auto_skills", True)
         permission_mode = kwargs.pop("permission_mode", None) or (
             MODE_PLAN if self.plan_mode else MODE_ASK
         )
@@ -106,6 +113,7 @@ class AgentCoder(Coder):
         self.ctx.memory = MemoryStore(default_memory_roots(self.root))
         self.ctx.plan_mode = self.plan_mode
 
+        self.beceri_butcesi = self._prompt_butcesi(BECERI_PAYI, BECERI_TAVANI)
         self.bellek_butcesi = self._prompt_butcesi(BELLEK_PAYI, MEMORY_BUDGET)
         self.talimat_butcesi = self._prompt_butcesi(TALIMAT_PAYI, INSTRUCTION_BUDGET)
         self.instructions, self.instruction_files = load_instructions(
@@ -319,6 +327,7 @@ class AgentCoder(Coder):
         # Bu tur boyunca büyüyecek çalışma mesaj listesi. Araç sonuçları buraya
         # eklenir; kalıcı geçmişe (cur_messages) tur bitiminde yazılır.
         working = list(messages)
+        self._otomatik_beceri_ekle(working, inp)
         turn_messages = []
         # Bu mesaj boyunca hiç araç çalıştı mı? Uyarı metnini buna göre
         # seçiyoruz: araç çalıştıysa "hiçbir şey yapmadı" demek yanlış olur.
@@ -420,6 +429,46 @@ class AgentCoder(Coder):
         # Akış çıktısını doğrudan io'ya yazdığımız için yield edecek bir şeyimiz yok.
         return
         yield
+
+    def _otomatik_beceri_ekle(self, working, inp):
+        """İsteğe uyan beceriyi bu tur için bağlama koy.
+
+        Modelin Skill aracını kendiliğinden çağırmasını beklemek çalışmıyor.
+        Ölçüldü: 14 beceri yüklüyken gemma4:e4b "skyup sunucusuna bağlan ve OS
+        güncel mi diye bak" isteğinde Skill'i bir kez bile çağırmadı, doğrudan
+        Ssh denedi ve boş döndü. Katalog sistem promptunda duruyor ama 4B
+        sınıfı bir model onlarca satırdan doğru olanı seçemiyor.
+
+        Beceri gövdesi kalıcı geçmişe değil, YALNIZCA bu turun mesaj listesine
+        giriyor: her turda tekrar tekrar birikirse bağlam beceri metinleriyle
+        dolar. Eşleşme sürerse bir sonraki turda yeniden eklenir.
+        """
+        if not self.otomatik_beceri or not self.ctx.skills:
+            return None
+
+        eslesme = self.ctx.skills.eslestir(inp, limit=1)
+        if not eslesme:
+            return None
+
+        skill, vurus = eslesme[0]
+        blok = self.gpt_prompts.auto_skill_prompt.format(
+            name=skill.name,
+            body=skill.render(self.beceri_butcesi),
+            triggers=", ".join(vurus),
+        )
+
+        # Ayrı bir mesaj yerine son kullanıcı mesajına iliştiriliyor: arka
+        # arkaya iki user mesajı bazı sohbet şablonlarını bozuyor.
+        for i in range(len(working) - 1, -1, -1):
+            if working[i].get("role") == "user":
+                working[i] = dict(working[i])
+                working[i]["content"] = (working[i].get("content") or "") + blok
+                break
+        else:
+            return None
+
+        self.io.tool_output(f"Beceri otomatik yüklendi: {skill.name} ({', '.join(vurus)})")
+        return skill
 
     def _one_turn(self, messages, tools):
         """Modele bir istek at, (metin, tool_calls) döndür."""

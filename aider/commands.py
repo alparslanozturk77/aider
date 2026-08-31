@@ -1216,7 +1216,7 @@ class Commands:
         return self.coder
 
     def cmd_skills(self, args):
-        """Becerileri listeler, diskten yeniden yükler; yeni iskelet: /skills new <ad>"""  # noqa
+        """Becerileri listeler ve yeniden yükler. /skills new <ad> | /skills tetik <istek>"""  # noqa
         coder = self._require_agent()
         if not coder:
             return
@@ -1224,6 +1224,8 @@ class Commands:
         parts = args.strip().split(maxsplit=1)
         if parts and parts[0] == "new":
             return self._new_skill(parts[1].strip() if len(parts) > 1 else "")
+        if parts and parts[0] == "tetik":
+            return self._skill_tetik(coder, parts[1].strip() if len(parts) > 1 else "")
 
         coder.ctx.skills.load()
         skills = coder.ctx.skills.skills
@@ -1239,6 +1241,33 @@ class Commands:
         for skill in skills.values():
             self.io.tool_output(f"  {skill.name}: {skill.description}")
             self.io.tool_output(f"    {skill.path}")
+
+    def _skill_tetik(self, coder, metin):
+        """Bir istek yazıldığında hangi becerinin yükleneceğini gösterir.
+
+        Tetikleyici ayarlamak deneme gerektiriyor; her seferinde modeli
+        çalıştırmadan denenebilsin diye ayrı komut.
+        """
+        if not metin:
+            self.io.tool_error('Kullanım: /skills tetik <örnek istek>')
+            self.io.tool_output('Örnek: /skills tetik "disk doldu, kim yiyor?"')
+            return
+
+        eslesme = coder.ctx.skills.eslestir(metin, limit=5)
+        if not eslesme:
+            self.io.tool_output(f"'{metin}' hiçbir beceriyi tetiklemiyor.")
+            self.io.tool_output(
+                "Tetiklemesi gerekiyorsa becerinin description alanına kullanıcının"
+                " gerçekten yazacağı kelimeleri tırnak içinde ekle."
+            )
+            return
+
+        self.io.tool_output(f"'{metin}' için sıralama:")
+        for sira, (skill, vurus) in enumerate(eslesme, 1):
+            isaret = "-> " if sira == 1 else "   "
+            self.io.tool_output(f"  {isaret}{skill.name}  ({', '.join(vurus)})")
+        self.io.tool_output()
+        self.io.tool_output("Yalnızca ilk sıradaki bağlama otomatik eklenir.")
 
     def _new_skill(self, name):
         """Yeni bir beceri iskeleti oluştur."""

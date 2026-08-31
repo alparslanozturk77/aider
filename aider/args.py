@@ -183,6 +183,16 @@ def get_parser(default_config_files, git_root):
         help="Use the agentic tool-calling mode (Claude Code style) for the main chat",
     )
     group.add_argument(
+        "--auto-skills",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Load a matching skill into context automatically when the request matches its"
+            " triggers (default: True). Small local models rarely call the Skill tool"
+            " themselves."
+        ),
+    )
+    group.add_argument(
         "--offline",
         action="store_true",
         default=False,

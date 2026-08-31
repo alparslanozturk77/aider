@@ -409,6 +409,42 @@ kurulması gerekmez ve hangi dizinde çalıştığın önemli değildir. Sebep �
 depo `/root/aider`'a klonlanıp `/root/aider-work` içinde çalışılınca ilk dört
 kökün hiçbiri eşleşmiyor ve program "Beceriler: 0 yüklendi" diyordu.
 
+### Otomatik tetikleme
+
+Beceriyi yüklemek için modelin `Skill` aracını çağırmasını beklemiyoruz.
+Ölçüldü: 14 beceri yüklüyken `gemma4:e4b`, "skyup sunucusuna bağlan ve OS
+güncel mi diye bak" isteğinde `Skill`'i **bir kez bile çağırmadı**. Katalog
+sistem promptunda duruyor ama 4B sınıfı bir model onlarca satırdan doğru
+olanı seçemiyor.
+
+Bunun yerine eşleştirme deterministik: isteğin metni becerilerin tetikleyici
+ifadeleriyle karşılaştırılır, en isabetli **tek** beceri o turun bağlamına
+eklenir ve ekrana `Beceri otomatik yüklendi: ansible (ansible)` yazılır.
+
+Tetikleyiciler `description` alanındaki tırnak içi ifadelerden okunur —
+37 becerinin hepsi zaten böyle yazılmış. Ezmek istersen frontmatter'a:
+
+```yaml
+triggers: hammer, content view, capsule
+auto: false        # bu beceri hiç otomatik yüklenmesin
+```
+
+Eşleşme Türkçe karakterleri katlar (`bağlanamıyor` = `baglanamiyor`) ve ek
+almış kelimeleri tutar (`playbook'u`, `ansible'da`); kelime **ortasında**
+eşleşmez, yani `paramount` içindeki `mount` tetiklemez.
+
+Sıralama: kaç ayrı tetikleyici tuttuğu > becerinin kendi adının geçmesi
+(+ağırlık) > en uzun eşleşme > az konu iddia eden beceri. Ad ağırlığı olmadan
+genel bir ifade (`"kontrol et"`) becerinin adını (`"ansible"`) geçiyordu.
+
+Hangi becerinin tetikleneceğini modeli çalıştırmadan sınamak için:
+
+```
+/skills tetik disk doldu, kim yiyor?
+```
+
+Kapatmak için `--no-auto-skills`.
+
 ### Programın kendi yardımından beceri üretme
 
 Çevrimdışı bir model bilmediği aracın sözdizimini arayamaz, uydurur.
@@ -584,6 +620,7 @@ Oturum içinde `/plan` ile açıp kapatabilirsin.
 | `/plan` | Plan modunu açar/kapatır |
 | `/skills` | Becerileri listeler ve diskten yeniden yükler |
 | `/skills new <ad>` | Yeni beceri iskeleti oluşturur |
+| `/skills tetik <istek>` | O istek hangi beceriyi tetiklerdi, gösterir |
 | `/beceri-uret <program>` | Programın `--help` ağacından beceri + komut referansı üretir |
 | `/mcp` | MCP sunucularını ve araçlarını listeler |
 | `/mcp reload` | MCP sunucularını yeniden başlatır |

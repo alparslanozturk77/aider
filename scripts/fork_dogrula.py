@@ -153,6 +153,7 @@ def _check_cli_flags():
         "--permission-mode",
         "--max-tool-iterations",
         "--offline",
+        "--auto-skills",
     ]
     missing = [f for f in required if f not in known]
     if missing:
@@ -506,6 +507,25 @@ def _check_skill_discovery():
     for skill in lib.skills.values():
         if not skill.description:
             raise Fail(f"'{skill.name}' becerisinin description'ı yok — model onu tetikleyemez")
+
+    # Tetikleme deterministik olmalı: modelin Skill aracını çağırmasını
+    # beklemek 4B sınıfı modellerde çalışmıyor. Kataloğun varlığı yetmez,
+    # gerçek bir istek gerçek beceriyi seçebilmeli.
+    ornekler = {
+        "ansible ile tüm sunucularda ntp kontrol et": "ansible",
+        "disk doldu, kim yiyor": "depolama",
+        "selinux engelliyor": "selinux",
+    }
+    for istek, beklenen in ornekler.items():
+        eslesme = lib.eslestir(istek, limit=1)
+        if not eslesme:
+            raise Fail(f"{istek!r} hiçbir beceriyi tetiklemiyor")
+        if eslesme[0][0].name != beklenen:
+            raise Fail(
+                f"{istek!r} -> {eslesme[0][0].name}, beklenen {beklenen}"
+            )
+    if lib.eslestir("merhaba"):
+        raise Fail("selamlaşma beceri tetikliyor; tetikleyiciler fazla genel")
 
     # Beceriler birbirine "`ad` becerisine geç" diye yönlendiriyor. Hedef
     # yoksa model boşluğa gönderilir ve bu sessizce olur; bir beceriyi

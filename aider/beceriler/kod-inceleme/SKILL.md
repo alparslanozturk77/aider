@@ -1,6 +1,6 @@
 ---
 name: kod-inceleme
-description: Bir değişikliği ya da dosyayı gözden geçirirken kullan. Hata, güvenlik açığı ve sadeleştirme fırsatlarını sistematik olarak arar. "incele", "review", "gözden geçir", "kontrol et" gibi isteklerde tetiklenir.
+description: Bir değişikliği ya da dosyayı gözden geçirirken kullan. Hata, güvenlik açığı ve sadeleştirme fırsatlarını sistematik olarak arar. "kod incele", "review", "gözden geçir", "değişikliği incele" gibi isteklerde tetiklenir.
 ---
 
 Bir değişikliği incelerken şu sırayı izle.
