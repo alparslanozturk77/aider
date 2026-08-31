@@ -233,7 +233,7 @@ def _check_gitignore():
         "ornek/aider.conf.yml",
         "ornek/permissions.yml",
         "ornek/mcp.json",
-        "aider-skills/kod-inceleme/SKILL.md",
+        "aider/beceriler/kod-inceleme/SKILL.md",
     ]
     wrongly_ignored = [p for p in must_be_tracked if ignored(p)]
     if wrongly_ignored:
@@ -455,7 +455,14 @@ def _check_permission_escapes():
     "Beceriler hem kişisel hem paylaşılan dizinden okunmalı.",
 )
 def _check_skill_discovery():
-    from aider.agent.skills import SHARED_SKILLS_DIR, SkillLibrary, default_skill_roots
+    import tempfile
+
+    from aider.agent.skills import (
+        SHARED_SKILLS_DIR,
+        YERLESIK_BECERILER,
+        SkillLibrary,
+        default_skill_roots,
+    )
 
     roots = [str(r) for r in default_skill_roots(REPO)]
     if not any(r.endswith(SHARED_SKILLS_DIR) for r in roots):
@@ -464,6 +471,18 @@ def _check_skill_discovery():
     lib = SkillLibrary(default_skill_roots(REPO))
     if not lib.skills:
         raise Fail(f"depodaki örnek beceriler bulunamadı. Aranan: {roots}")
+
+    # Asıl değişmez: beceriler depo dışında bir dizinde de görünmeli. Ölçülen
+    # arıza — depo /root/aider'a klonlanıp /root/aider-work içinde çalışılınca
+    # "Beceriler: 0 yüklendi" oluyordu.
+    with tempfile.TemporaryDirectory() as baska_dizin:
+        disarda = SkillLibrary(default_skill_roots(baska_dizin))
+        if len(disarda.skills) < len(lib.skills):
+            raise Fail(
+                "beceriler depo dışında bir dizinde görünmüyor: "
+                f"depoda {len(lib.skills)}, dışarıda {len(disarda.skills)}. "
+                "Yerleşik beceriler paketin içinde mi?"
+            )
     for skill in lib.skills.values():
         if not skill.description:
             raise Fail(f"'{skill.name}' becerisinin description'ı yok — model onu tetikleyemez")
@@ -475,7 +494,10 @@ def _check_skill_discovery():
 
     adlar = set(lib.skills)
     kirik = set()
-    for yol in sorted((REPO / SHARED_SKILLS_DIR).glob("*/SKILL.md")):
+    beceri_dosyalari = sorted(YERLESIK_BECERILER.glob("*/SKILL.md"))
+    if not beceri_dosyalari:
+        raise Fail(f"yerleşik beceri dizini boş ya da yok: {YERLESIK_BECERILER}")
+    for yol in beceri_dosyalari:
         metin = yol.read_text(encoding="utf-8")
         # Kanonik biçim: "`ad` becerisi/becerisine/becerisini". Yalnızca bunu
         # arıyoruz; serbest metinde geçen komut adları yanlış alarm veriyor.

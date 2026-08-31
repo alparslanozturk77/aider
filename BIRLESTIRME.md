@@ -225,7 +225,7 @@ sonuna kendi `.aider*` satırını ekliyor ve son eşleşen kural kazandığı i
 negasyonlar sessizce ölüyor. Bu oturumda üç kez oldu.
 
 Bu yüzden depoya girmesi gereken hiçbir şey `.aider` ile başlayan dizinde
-durmuyor: şablonlar `ornek/`, beceriler `aider-skills/`.
+durmuyor: şablonlar `ornek/`, beceriler `aider/beceriler/`.
 
 ---
 

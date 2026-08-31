@@ -32,7 +32,7 @@ işi bitirene kadar sürdürür.
 | Akış | tek düzenleme | araç döngüsü |
 | Komut çalıştırma | önerir | çalıştırır ve sonucu okur |
 | İzin | `--yes` / soru | üç mod + kural tabanlı |
-| Beceriler | yok | 32 beceri, kademeli açılım |
+| Beceriler | yok | 37 beceri, kademeli açılım |
 | MCP | yok | stdio istemcisi |
 | Bellek | yok | proje talimatı + kalıcı not |
 
@@ -66,7 +66,8 @@ Derleme gerekmez. Sonra program içinden endpoint'i tanımla:
 
 ## Beceriler
 
-`aider-skills/` altında 37 beceri var. Sistem promptuna yalnızca
+Programla birlikte 37 beceri geliyor (`aider/beceriler/`), hangi dizinde
+çalıştığından bağımsız olarak görünürler. Sistem promptuna yalnızca
 `ad: açıklama` satırı girer; gövde model isteyince yüklenir, dolayısıyla
 beceri sayısı bağlam maliyeti yaratmaz.
 

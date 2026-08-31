@@ -29,7 +29,8 @@ sonra kendi değerlerini girmen gerekir.
 
 ## Beceriler
 
-Örnek beceriler şablon değil, doğrudan çalışır durumda: `aider-skills/` dizininde.
+Örnek beceriler şablon değil, doğrudan çalışır durumda ve programla birlikte
+geliyor: `aider/beceriler/` dizininde.
 Kopyalamana gerek yok, aider onları oradan okur.
 
 - `aider-skills/` — depoya girer, takımla paylaşılır

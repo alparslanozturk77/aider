@@ -15,6 +15,7 @@ yaratmaz.
 | Dizin | Kim görür | Depoya girer mi |
 |---|---|---|
 | `aider-skills/<ad>/SKILL.md` | takım | evet |
+| `aider/beceriler/<ad>/SKILL.md` | programla gelen, herkes | evet (fork deposunda) |
 | `.aider/skills/<ad>/SKILL.md` | yalnız sen | hayır |
 
 Paylaşılacak beceriyi `aider-skills/` altına yaz. `.aider/` ile başlayan yol

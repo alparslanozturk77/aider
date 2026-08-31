@@ -55,6 +55,68 @@ curl -s "$OPENAI_API_BASE/models" \
   -H "Authorization: Bearer $OPENAI_API_KEY" | jq -r '.data[].id'
 ```
 
+### Depodan kurulum (klon + venv, proxy arkasında)
+
+`kur.sh` ağa çıkıp `uv` indirir. Kurum ağında bu engelliyse ya da elinde zaten
+bir klon varsa doğrudan depodan kur:
+
+```bash
+# RHEL 9: sistem Python'ı 3.9, aider >=3.10 istiyor
+dnf install -y python3.11 git
+git clone https://github.com/alparslanozturk77/aider.git /opt/aider
+cd /opt/aider
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -e .
+ln -sf /opt/aider/.venv/bin/aider /usr/local/bin/aider
+```
+
+Proxy arkasındaysan pip'e adresi ver:
+
+```bash
+export https_proxy=http://proxy.kurum.local:8080
+export http_proxy="$https_proxy"
+# ya da tek seferlik:
+.venv/bin/python -m pip install --proxy "$https_proxy" -e .
+```
+
+`-e` (editable) bilinçli: kod venv'e kopyalanmaz, klondan çalışır. Güncelleme
+`git pull`'dan ibaret kalır.
+
+Son satırdaki sembolik bağ sayesinde her yerden sadece `aider` yazarsın.
+`ln` yerine `ln -s` kullan; sert bağ farklı dosya sistemlerinde çalışmaz.
+
+**Çalışma dizini kurulum dizini olmak zorunda değil.** Klonu `/opt/aider`'a
+koyup `/root/is` içinde çalışabilirsin; beceriler programın içinde taşındığı
+için her dizinde görünürler.
+
+### Güncelleme
+
+| Kurulum | Güncelleme |
+|---|---|
+| `kur.sh` (uv) | `./kur.sh` yeniden çalıştır (`uv tool install --force`) |
+| klon + `pip install -e .` | `git pull` yeter |
+| klon + `pip install .` | `git pull`, sonra `pip install --no-deps .` |
+| çevrimdışı paket / RPM | yeni paketi indirip kur |
+
+Hangisinde olduğunu şununla gör:
+
+```bash
+.venv/bin/python -m pip show aider-chat | grep -i editable
+```
+
+"Editable project location" satırı varsa `git pull` yeter.
+
+`git pull` yalnızca **bağımlılık listesi değişmediyse** kendi başına yeter;
+`requirements.txt` değiştiyse kurulum ağa çıkmak zorunda:
+
+```bash
+git pull
+.venv/bin/python -m pip install -e .    # yalnızca requirements değiştiyse
+```
+
+Agent katmanı (beceriler, slash komutları, sistem promptu) saf Python ve
+Markdown; yeni bağımlılık eklenmedikçe hepsi `git pull` ile gelir.
+
 ### Neden venv değil de uv?
 
 Bağımlılık ağacı büyük — kurulum ~630 MB, tek başına
@@ -271,9 +333,16 @@ Aranan dizinler, öncelik sırasıyla:
 2. `<proje>/aider-skills/` — takımla paylaşılan, depoya girer
 3. `~/.aider/skills/` — tüm projelerde geçerli kişisel beceriler
 4. `AIDER_SKILLS_PATH` içindeki dizinler — kurum geneli ortak beceriler
+5. `aider/beceriler/` — programla birlikte gelen 37 beceri
 
 Aynı isim birden fazla yerde varsa **ilk kök kazanır**. Sıra bilinçli: paylaşılan
-bir beceriyi lokalde geçici olarak ezebilirsin.
+bir beceriyi lokalde geçici olarak ezebilirsin, programla geleni de kendi
+kopyanla değiştirebilirsin.
+
+Beşincisi paketin **içinde** durur; kurulumda kopyalanması ya da sembolik bağ
+kurulması gerekmez ve hangi dizinde çalıştığın önemli değildir. Sebep ölçüldü:
+depo `/root/aider`'a klonlanıp `/root/aider-work` içinde çalışılınca ilk dört
+kökün hiçbiri eşleşmiyor ve program "Beceriler: 0 yüklendi" diyordu.
 
 ### Programın kendi yardımından beceri üretme
 
@@ -297,7 +366,7 @@ Yeni beceri oluşturmak için `/skills new <ad>` — iskeleti `aider-skills/`
 altına, yani depoya girebilen konuma yazar. `/skills` ile diskten yeniden
 yükleyip aider'ı kapatmadan test edersin.
 
-Depodaki `aider-skills/kod-inceleme` ve `aider-skills/test-yaz` çalışan
+Depodaki `aider/beceriler/kod-inceleme` ve `aider/beceriler/test-yaz` çalışan
 örneklerdir; kendi becerini yazarken biçim referansı olarak kullan.
 
 ## İzin sistemi

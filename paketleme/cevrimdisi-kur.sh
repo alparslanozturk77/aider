@@ -67,6 +67,5 @@ fi
 
 echo
 printf '\033[1mKuruldu.\033[0m\n'
-bilgi "Beceriler: $HEDEF/aider-skills"
-bilgi "Tüm projelerde görünmesi için: ln -s $HEDEF/aider-skills ~/.aider/skills"
+bilgi "Beceriler programla birlikte kuruldu; her dizinde görünürler."
 bilgi "Modeli tanımla: aider-agent  ->  /model-ekle"

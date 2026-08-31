@@ -41,6 +41,12 @@ include-package-data = true
 [tool.setuptools.packages.find]
 include = ["aider"]
 
+# Beceriler paketin içinde taşınır. setuptools_scm dosya bulucusu git'teki her
+# şeyi zaten alıyor; bu satır o eklenti devre dışı kalırsa becerilerin sessizce
+# düşmemesi için.
+[tool.setuptools.package-data]
+aider = ["beceriler/**/*.md"]
+
 [build-system]
 requires = ["setuptools>=68", "setuptools_scm[toml]>=8"]
 build-backend = "setuptools.build_meta"

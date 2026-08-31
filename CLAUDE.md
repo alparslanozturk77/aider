@@ -95,7 +95,10 @@ Bu yüzden depoya girmesi gereken hiçbir şey `.aider` ile başlayan bir dizind
 durmuyor:
 
 - `ornek/` — yapılandırma şablonları
-- `aider-skills/` — paylaşılan beceriler
+- `ornek/altyapi/` — filo şablonu
+
+Programla gelen 37 beceri ise paketin içinde: `aider/beceriler/`. Orada
+durmasının sebebi ayrı — hangi dizinde çalışılırsa çalışılsın görünsünler.
 
 `.gitignore`'a `!` ile başlayan satır ekleme. Bir dosyanın gerçekten depoya
 girdiğini `git ls-tree -r <dal> --name-only` ile doğrula; `git status` yeterli
@@ -144,7 +147,7 @@ geri koyabilecek kadar ayrıntılı.
 
 ## Beceriler
 
-`aider-skills/` altında 37 beceri var. Agent modunda model bunları
+Programla birlikte 37 beceri geliyor (`aider/beceriler/`). Agent modunda model bunları
 kendiliğinden yükler; sen de referans olarak okuyabilirsin.
 
 | Beceri | Ne zaman |

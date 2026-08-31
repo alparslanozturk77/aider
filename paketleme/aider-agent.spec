@@ -67,7 +67,7 @@ chmod 0755 %{buildroot}%{_bindir}/aider-agent
 # Beceriler tüm projelerde görünsün diye ev dizinine değil, sistem geneline
 # bağlanır; aider AIDER_SKILLS_PATH ile de okuyabilir.
 echo "aider-agent kuruldu: %{uygulama_dizini}"
-echo "Beceriler: %{uygulama_dizini}/aider-skills"
+echo "Beceriler programla birlikte kuruldu; her dizinde görünürler."
 echo "Modeli tanımlamak için: aider-agent  ->  /model-ekle"
 
 %postun

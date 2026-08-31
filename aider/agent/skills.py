@@ -9,10 +9,17 @@ Aranan yerler, öncelik sırasıyla:
   2. <proje>/aider-skills/    takımla paylaşılan, depoya girer
   3. ~/.aider/skills/         tüm projelerde geçerli kişisel beceriler
   4. AIDER_SKILLS_PATH ortam değişkenindeki iki nokta ile ayrılmış dizinler
+  5. aider/beceriler/         programla birlikte gelen yerleşik beceriler
 
-Sıra bilinçli: aynı adlı bir beceri hem kişisel hem paylaşılan dizinde varsa
-kişisel olan kazanır, yani paylaşılan bir beceriyi lokalde geçici olarak
-ezebilirsin.
+Sıra bilinçli: aynı adlı bir beceri birden çok dizinde varsa önce gelen
+kazanır. Kişisel beceri paylaşılanı, paylaşılan da yerleşiği ezer; yani
+programla gelen bir beceriyi kendi kopyanla değiştirebilirsin.
+
+Yerleşik beceriler en sonda ve paketin İÇİNDE duruyor. Sebep ölçüldü:
+depo `/root/aider`'a klonlanıp `/root/aider-work` içinde çalışılınca beceri
+dizinlerinin hiçbiri eşleşmiyor ve program "0 beceri yüklendi" diyor. Beceri
+dosyaları programla birlikte taşınırsa hangi dizinde çalışıldığının önemi
+kalmıyor.
 """
 
 import os
@@ -105,6 +112,11 @@ class SkillLibrary:
 # .gitignore'daki .aider* kuralı .aider/skills/ altını depo dışında bırakıyor.
 SHARED_SKILLS_DIR = "aider-skills"
 
+# Programla birlikte gelen beceriler. Paketin içinde durduğu için wheel'e,
+# çevrimdışı pakete ve RPM'e kendiliğinden giriyor; kurulumda ayrıca
+# kopyalanması ya da sembolik bağ kurulması gerekmiyor.
+YERLESIK_BECERILER = Path(__file__).resolve().parent.parent / "beceriler"
+
 
 def default_skill_roots(project_root):
     project_root = Path(project_root)
@@ -115,6 +127,8 @@ def default_skill_roots(project_root):
     ]
     extra = os.environ.get("AIDER_SKILLS_PATH", "")
     roots += [Path(p) for p in extra.split(os.pathsep) if p.strip()]
+    # En sonda: yerleşik beceriler aynı adlı yerel bir beceriyi ezmesin.
+    roots.append(YERLESIK_BECERILER)
     return roots
 
 

@@ -16,8 +16,8 @@ Bir becerinin doğru olduğunu iddia etmenin tek ölçüsü, içindeki komutlar�
 4. Yazıldığından beri ürün sürümü değişmiş olanlar (frontmatter'daki tarihe bak)
 
 ```bash
-wc -c aider-skills/*/SKILL.md | sort -rn | head
-grep -rn "doğrulanmadı" aider-skills/
+wc -c aider/beceriler/*/SKILL.md | sort -rn | head
+grep -rn "doğrulanmadı" aider/beceriler/
 ```
 
 ## 2. Komutları gerçek sunucuda çalıştır

@@ -9,7 +9,12 @@ from unittest.mock import MagicMock, patch
 from aider.agent import beceri_uret
 from aider.agent.plan import ExitPlanModeTool
 from aider.agent.registry import ToolContext, ToolError, ToolRegistry
-from aider.agent.skills import SkillLibrary, SkillTool, _parse_frontmatter
+from aider.agent.skills import (
+    SkillLibrary,
+    SkillTool,
+    _parse_frontmatter,
+    default_skill_roots,
+)
 from aider.agent.todo import TodoList, TodoWriteTool
 from aider.agent.tools import (
     BashTool,
@@ -1240,10 +1245,21 @@ class TestShippedSkills(unittest.TestCase):
     def setUp(self):
         from aider.agent.skills import SkillLibrary
 
-        self.lib = SkillLibrary([REPO_ROOT / "aider-skills"])
+        self.lib = SkillLibrary([REPO_ROOT / "aider" / "beceriler"])
 
     def test_skills_are_discovered(self):
-        self.assertTrue(self.lib.skills, "aider-skills/ altında beceri bulunamadı")
+        self.assertTrue(self.lib.skills, "aider/beceriler/ altında beceri bulunamadı")
+
+    def test_beceriler_depo_disinda_da_bulunur(self):
+        """Beceriler yalnızca depo içinde değil, her çalışma dizininde görünmeli.
+
+        Ölçülen arıza: depo /root/aider'a klonlanıp /root/aider-work içinde
+        çalışılınca "Beceriler: 0 yüklendi" oluyordu. Yerleşik beceriler
+        paketin içinde durduğu için artık çalışma dizini önemsiz.
+        """
+        with tempfile.TemporaryDirectory() as baska_dizin:
+            disarda = SkillLibrary(default_skill_roots(baska_dizin))
+        self.assertGreaterEqual(len(disarda.skills), len(self.lib.skills))
 
     def test_every_skill_has_a_trigger_description(self):
         # Açıklama olmadan model beceriyi hiç tetikleyemez.
