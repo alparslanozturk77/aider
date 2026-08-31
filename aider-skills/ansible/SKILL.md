@@ -1,115 +1,140 @@
 ---
 name: ansible
-description: Ansible ile birden çok sunucuda iş yaparken kullan — envanter doğrulama, ad-hoc komut, playbook çalıştırma, kuru çalıştırma. "ansible", "playbook", "envanter", "inventory", "hosts dosyası", "tüm sunucularda", "ansible-playbook" isteklerinde tetiklenir.
+description: Ansible ile birden çok sunucuda iş yaparken kullan — proje düzeni kurma, envanter doğrulama, tek sunucuya daraltma, ad-hoc komut, playbook çalıştırma, kuru çalıştırma. "ansible", "playbook", "envanter", "inventory", "hosts dosyası", "tüm sunucularda", "şu sunucuda çalıştır", "ansible-playbook" isteklerinde tetiklenir.
 ---
 
 Doğrulandı: ansible-core 2.16.16, AlmaLinux 10.2 — 2026-08-29
+`--limit` davranışı ansible-core 2.15.13'te ölçüldü — 2026-08-31
 
 Ansible tek makineyi değil **filoyu** etkiler; eksik `--limit` yüzlerce
-sunucuya dokunur. Sıra: hangi yapılandırma etkin → envanter doğru mu → kuru
-çalıştırma → gerçek çalıştırma.
+sunucuya dokunur. Sıra: proje düzeni → hangi cfg etkin → envanter doğru mu →
+kimi kapsıyor → kuru çalıştırma → gerçek çalıştırma.
 
-## 1. Hangi ansible.cfg etkin
+## 1. Proje düzeni — ilk iş
 
-`ansible.cfg` çalışılan dizinden okunur. Hangisinin okunduğunu **varsayma**:
+Ansible işleri kendi klasöründe durur; **her proje kendi yapılandırmasını ve
+kendi envanterini taşır**. Playbook yazmadan ÖNCE bu ikisini oluştur:
+
+```
+ansible/
+  ansible.cfg          [defaults] altında: inventory = hosts-<proje>.ini
+  hosts-<proje>.ini    envanter, INI biçimi
+  site.yml             playbook
+```
+
+Envanter adında proje geçer (`hosts-uretim.ini`), yalın `hosts` değil — bir
+dizinde birden çok envanter durabilir, hangisinin ne olduğu ancak adından
+anlaşılır. INI biçimi yeterlidir, YAML'e geçme:
+
+```ini
+[web]
+web01 ansible_host=10.0.0.11
+[uretim:children]
+web
+```
+
+Host değişkeni satır sonuna, grup değişkeni `[web:vars]`, alt grup
+`[uretim:children]` bloğuna yazılır.
+
+Düzenin karşılığı: doğru dizine `cd` ettiğin an doğru envanter etkin olur.
+`-i` verirsen cfg'deki envanteri **ezer**; ikisi farklıysa çalışan `-i`'dir.
+
+## 2. Hangi ansible.cfg etkin
+
+`ansible.cfg` çalışılan dizinden okunur. Hangisi okundu, **varsayma**:
 
 ```bash
 ansible --version | head -3          # "config file = ..." satırı
-ansible-config dump --only-changed   # etkin ayarlar ve nereden geldiği
+ansible-config dump --only-changed   # etkin ayarlar ve kaynağı
 ```
 
-Ölçülen çıktı `CONFIG_FILE()` ve `DEFAULT_HOST_LIST()` satırlarını, yani
-hangi dosyanın hangi envanteri getirdiğini gösterir.
-
 **Tuzak: dizin herkese yazılabilirse (777) ansible.cfg sessizce yok sayılır.**
-Ölçüldü — yalnızca bir uyarı basıyor ve `/etc/ansible/ansible.cfg`'ye düşüyor:
+Ölçüldü — uyarı basıp `/etc/ansible/ansible.cfg`'ye düşüyor:
 
 ```
 [WARNING]: Ansible is being run in a world writable directory
-  config file = /etc/ansible/ansible.cfg
 ```
 
 Belirti: "ayarım uygulanmıyor". `ls -ld .` ile bak, `chmod 755 .` ile düzelt.
 
-Çalışma dizini tarihe göre ayrılmışsa (`.../ansible/temmuz/`, `.../agustos/`)
-her klasörün kendi `ansible.cfg` ve `hosts` dosyası olur. Yanlış klasörden
-çalıştırmak **sessizce yanlış envanteri** kullandırır. İlk iş doğru dizine
-`cd` etmek, ikinci iş yukarıdaki `config file` satırını okumak.
-
-## 2. Envanteri çalıştırmadan önce doğrula
-
-INI envanter tamamen desteklidir; YAML'e geçmek zorunlu değil. Ama **ayrıştığını
-gör**:
+## 3. Envanteri çalıştırmadan önce doğrula
 
 ```bash
 ansible-inventory --graph            # grup ağacı
 ansible-inventory --host web01       # o hostun değişkenleri
-ansible <grup> --list-hosts          # hangi makineler kapsanacak
+ansible <grup> --list-hosts          # kimi kapsıyor
 ```
 
-`--graph` grup ağacını çizer (`@uretim` altında `@web`, `@db` gibi); beklediğin
-makineler beklediğin grupta mı, orada görürsün.
-
-**Bozuk INI hata vermez, sessizce boş envanter üretir.** Köşeli parantezi
-kapatmayı unutmak yeterli; ölçülen sonuç:
+**Bozuk INI hata vermez, sessizce boş envanter üretir.** Kapatılmayan köşeli
+parantez yeterli; ölçülen sonuç:
 
 ```
 [WARNING]: No inventory was parsed, only implicit localhost is available
 ```
 
-Bu durumda playbook hiçbir sunucuya değmez ya da localhost'a çalışır. Her
-zaman önce `--graph` ya da `--list-hosts`.
+O hâlde playbook hiçbir sunucuya değmez ya da localhost'a çalışır.
 
-INI'de host değişkeni satır sonuna (`web01 ansible_host=10.0.0.11`), grup
-değişkeni `[web:vars]` bloğuna, alt grup `[uretim:children]` bloğuna yazılır.
+## 4. Tek sunucuda çalıştırma
 
-## 3. Çalıştırma sırası
+Envanterin tamamı yerine tek makine için `-l` (`--limit`):
 
 ```bash
-ansible-playbook 01.ping.yaml --syntax-check      # yazım
-ansible-playbook 01.ping.yaml --list-hosts        # kimi kapsıyor
-ansible-playbook 01.ping.yaml --check             # kuru çalıştırma
-ansible-playbook 01.ping.yaml --limit web         # daralt
-ansible-playbook 01.ping.yaml                     # gerçek
+ansible-playbook -i hosts-uretim.ini site.yml -l web01     # tek sunucu
+ansible-playbook -i hosts-uretim.ini site.yml -l web       # tek grup
+ansible-playbook -i hosts-uretim.ini site.yml -l 'web01,db01'
+ansible -i hosts-uretim.ini web01 -m ping                  # ad-hoc
 ```
 
-Erişim testi için playbook şart değil:
+Kullanıcı "şu sunucuda" dediğinde varsayılan yol budur; playbook'un `hosts:`
+satırını değiştirme, `-l` ile daralt.
+
+Yazım hatası **sessizce geçmez** — ölçüldü, çıkış kodu 1 ile düşer:
+
+```
+[WARNING]: Could not match supplied host pattern, ignoring: yok-boyle-bir-sey
+ERROR! Specified inventory, host pattern and/or --limit leaves us with no hosts to target.
+```
+
+Tersi güvence değil: **doğru yazılmış ama yanlış makineyi gösteren ad** hata
+vermez, sessizce oraya çalışır. Gerçek çalıştırmadan önce her zaman
+`--list-hosts`.
+
+## 5. Çalıştırma sırası
 
 ```bash
-ansible all -m ping
-ansible <grup> -m command -a "chronyc sources"
+ansible-playbook site.yml --syntax-check         # yazım
+ansible-playbook site.yml -l web01 --list-hosts  # kimi kapsıyor
+ansible-playbook site.yml -l web01 --check       # kuru çalıştırma
+ansible-playbook site.yml -l web01               # gerçek
 ```
 
 `--check` her modülde desteklenmez; `command`/`shell` kuru çalıştırmada
 atlanır — "değişiklik yok" çıktısı güvence değildir.
 
-## 4. Çevrimdışı modül referansı
+## 6. Modül seçeneklerini ezberden yazma
 
-Modül seçeneklerini **ezberden yazma**. `ansible-doc` yerel belgedir, internet
-gerektirmez:
+`ansible-doc` yerel belgedir, ağ istemez:
 
 ```bash
-ansible-doc -l | wc -l                       # kurulu modül sayısı
 ansible-doc ansible.builtin.systemd_service  # seçenekler ve örnekler
 ansible-doc -s ansible.builtin.copy          # kısa şablon
+ansible-doc -l | wc -l                       # kurulu modül sayısı
 ```
 
-Ölçüldü: koleksiyonsuz bir ansible-core'da 71 modül var. Aradığın modül
-listede yoksa koleksiyon eksiktir — çevrimdışı ortamda galaxy'den kurulum
-çalışmaz, kullanıcıya sor.
+Ölçüldü: koleksiyonsuz ansible-core'da 71 modül var. Modül listede yoksa
+koleksiyon eksiktir — çevrimdışı ortamda galaxy kurulumu çalışmaz, sor.
 
-## 5. Yan etkili — onaysız çalıştırma
+## 7. Yan etkili — onaysız çalıştırma
 
 ```
-ansible-playbook <p>.yaml       --limit yoksa TÜM envanter
--m command/shell                uzak makinede komut çalıştırır
--m file/copy/template           dosya değiştirir
--e "degisken=deger"             playbook değişkenini ezer
---become                        uzak makinede root'a yükselir
+ansible-playbook <p>.yml     -l/--limit yoksa TÜM envanter
+-m command/shell             uzak makinede komut çalıştırır
+-m file/copy/template        dosya değiştirir
+-e "degisken=deger"          playbook değişkenini ezer
+--become                     uzak makinede root'a yükselir
 ```
 
-Çalıştırmadan önce **kimi kapsadığını göster** (`--list-hosts`) ve `--check`
-çıktısını sun. Onay almadan gerçek çalıştırma yapma.
+Önce **kimi kapsadığını göster** (`--list-hosts`) ve `--check` çıktısını sun.
 
 ## Raporlama
 
@@ -122,5 +147,5 @@ ansible-playbook <p>.yaml       --limit yoksa TÜM envanter
 diğer 32: ok, changed=0
 ```
 
-`unreachable` ile `failed` farklıdır: birincisi sunucuya ulaşılamadı
-(ssh/isim), ikincisi ulaşıldı ama görev düştü. Teşhisin yönünü bu belirler.
+`unreachable` ulaşılamadı (ssh/isim), `failed` ulaşıldı ama görev düştü.
+Teşhisin yönünü bu ayrım belirler.
