@@ -35,6 +35,7 @@ aider/agent/
   todo.py         Görev listesi
   plan.py         Plan modu
   model_setup.py  /model-ekle akışı
+  oturum.py       Oturum kaydı (JSONL) ve --continue ile geri yükleme
 
 aider/coders/
   agent_coder.py     Araç döngüsü
@@ -50,10 +51,10 @@ değiştirmek zorunda kalırsan yamayı en küçük blokta tut ve nedenini yorum
 |---|---|
 | `aider/models.py` | `send_completion` çok araçlı `tool_choice="auto"` destekliyor |
 | `aider/coders/__init__.py` | `AgentCoder` kaydı |
-| `aider/args.py` | `--agent`, `--plan`, `--auto`, `--permission-mode`, `--max-tool-iterations`, `--offline`, `--auto-skills` |
+| `aider/args.py` | `--agent`, `--plan`, `--auto`, `--permission-mode`, `--max-tool-iterations`, `--offline`, `--auto-skills`, `--continue` |
 | `aider/main.py` | Agent kwarg'ları yalnızca agent coder'a; agent modunda repo map varsayılan kapalı |
 | `aider/io.py` | Mod göstergesi kancaları ve `shift+tab` |
-| `aider/commands.py` | On iki slash komutu; `/voice` çevrimdışı modda kapalı |
+| `aider/commands.py` | On üç slash komutu; `/voice` çevrimdışı modda kapalı |
 | `.gitignore` | `.env` ve `.mcp.json` ignore |
 | `README.md` | Fork'un kendi ön yüzü; upstream'inki `ORIJINAL-README.md` |
 
@@ -234,6 +235,22 @@ kancaları, prompt önekini üreten `build_prompt_prefix()` ve prompt mesajını
 `invalidate()` aynı metni yeniden çiziyor ve değişim ekranda ancak bir
 sonraki prompt'ta görünüyor. `test_prompt_message_is_callable_and_follows_mode`
 bunu koruyor.
+
+## Oturum sürekliliği
+
+Upstream'de yoktu. `--restore-chat-history` agent modunda kullanılamıyor:
+markdown günlüğün tamamını okuyor ve `tool_calls` / `role="tool"` mesajlarını
+kaybediyor. Agent geçmişinin yarısı araç trafiği olduğu için bu geçmişin
+yarısını atmak.
+
+`aider/agent/oturum.py` her oturumu JSONL olarak, mesajları API biçiminde
+saklıyor. `--continue` son oturumu sürdürüyor, `/oturumlar` listeliyor.
+
+Bir tuzağı var ve sessiz: bütçe kırpması `tool_calls` taşıyan assistant
+mesajını kendi `tool` yanıtlarından ayırırsa endpoint isteği reddediyor.
+`budala()` bu yüzden kesme noktasını ileri alıp ilk `user` mesajına
+hizalıyor; `TestOturumButcesi` dört ayrı bütçede yetim `tool` mesajı
+kalmadığını sınıyor.
 
 ## Çevrimdışı çalışma
 

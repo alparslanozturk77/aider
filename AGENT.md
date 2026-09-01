@@ -55,6 +55,37 @@ curl -s "$OPENAI_API_BASE/models" \
   -H "Authorization: Bearer $OPENAI_API_KEY" | jq -r '.data[].id'
 ```
 
+### Oturumlar ve kaldığı yerden devam
+
+```bash
+aider --agent --continue      # son oturumu sürdür
+/oturumlar                    # kayıtlı oturumları listele
+```
+
+Her oturum `.aider/sessions/<damga>.jsonl` dosyasına, mesajlar **API'ye
+gönderildiği biçimde** yazılır. Yani araç çağrıları ve sonuçları da geri
+gelir; sohbet kaldığı yerden sürer.
+
+Upstream'in `--restore-chat-history`'si bu iş için kullanılamıyor: markdown
+sohbet günlüğünün tamamını okuyup ayrıştırıyor (dosya aylar içinde yüz
+kilobaytları buluyor) ve `tool_calls` ile `role="tool"` mesajlarını
+kaybediyor. Agent modunda geçmişin yarısı araç trafiği olduğu için bu,
+geçmişin yarısını atmak demek.
+
+Ayrıntılar:
+
+- Satır satır yazılır; program çökerse o ana kadarki geçmiş elde kalır ve
+  yarım kalan son satır gerisini bozmaz.
+- Geri yükleme bağlam penceresinin **%30'una** kırpılır (tavan 40k karakter).
+  Kırpma noktası ileri alınıp ilk `user` mesajına hizalanır — `tool_calls`
+  taşıyan bir assistant mesajı ile ona ait `tool` yanıtları ayrılırsa
+  endpoint isteği reddediyor.
+- Elli oturumdan eskisi budanır.
+- Kayıt hatası oturumu düşürmez; bir kez uyarılır ve kayıt kapanır.
+
+Dosyalar `.aider/` altında olduğu için `.gitignore`'daki `.aider*` kuralıyla
+depoya girmezler. Komut çıktıları içerdiklerinden bu bilinçli.
+
 ### Çevrimdışı mod
 
 Hava boşluklu bir kurum sunucusunda:
@@ -554,6 +585,27 @@ araç çağrısı yüzlerce sunucuyu değiştirebilirdi. Salt-okunur karşılık
 `ansible-doc`) kapsam dışı — önek eşleşmesi sözcük sınırı aradığı için
 `ansible-doc`, `ansible` kuralına takılmıyor.
 
+### Uzak komutlarda sunucu kapsamı
+
+`::` sunucu kapsamını komut deseninden ayırır; sunucu kısmı glob'dur:
+
+```yaml
+allow:
+  - Ssh(skyup::systemctl restart:*)   # yalnızca skyup'ta
+  - Ssh(test-*::uptime)               # adı test- ile başlayan sunucularda
+```
+
+`::` yoksa kural **her sunucuda** geçerlidir. Reddetme kurallarında istenen
+budur; izin kurallarında ise fazla geniştir — test sunucusunda onayladığın
+komut üretimde de onaysız çalışırdı.
+
+Bu yüzden bir uzak komutta "bir daha sorma" dediğinde üretilen kural hem
+komuta hem sunucuya daralır:
+
+```
+Ssh(skyup::yum check-update:*)
+```
+
 ### Uzak komutlar da kapsanır
 
 `Bash(...)` biçiminde yazılmış **reddetme ve sorma** kuralları `Ssh` ile
@@ -621,6 +673,7 @@ Oturum içinde `/plan` ile açıp kapatabilirsin.
 | `/skills` | Becerileri listeler ve diskten yeniden yükler |
 | `/skills new <ad>` | Yeni beceri iskeleti oluşturur |
 | `/skills tetik <istek>` | O istek hangi beceriyi tetiklerdi, gösterir |
+| `/oturumlar` | Önceki agent oturumlarını listeler |
 | `/beceri-uret <program>` | Programın `--help` ağacından beceri + komut referansı üretir |
 | `/mcp` | MCP sunucularını ve araçlarını listeler |
 | `/mcp reload` | MCP sunucularını yeniden başlatır |

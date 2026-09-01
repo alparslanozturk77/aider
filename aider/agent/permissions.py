@@ -11,6 +11,12 @@ Kural sözdizimi Claude Code'un settings.json izinlerine benzer:
     Bash(npm test)          -> tam olarak "npm test"
     Write(src/**)           -> src altındaki dosyalara yazma
     Edit(*.py)              -> .py dosyalarını düzenleme
+    Ssh(skyup::df -h:*)     -> yalnızca skyup'ta "df -h" ile başlayanlar
+    Ssh(test-*::uptime)     -> adı test- ile başlayan sunucularda "uptime"
+
+Uzak komutlarda `::` sunucu kapsamını komut deseninden ayırır. Sunucu kısmı
+glob'dur. `::` yoksa kural her sunucuda geçerlidir — reddetme kurallarında
+istenen budur, izin kurallarında ise fazla geniş kalır.
 
 Reddetme her zaman izni yener. Kabuk komutlarında `&&`, `||`, `;`, `|` ile
 zincirlenmiş her parça ayrı ayrı değerlendirilir: `git diff && rm -rf /`
@@ -121,6 +127,14 @@ class Rule:
         self.tool = m.group(1)
         self.pattern = m.group(2)
 
+        # Uzak komutlarda "sunucu::komut" biçimi. "::" kabuk komutlarında
+        # geçmediği için ayraç olarak güvenli.
+        self.host_pattern = None
+        if self.pattern is not None and "::" in self.pattern:
+            host, _, komut = self.pattern.partition("::")
+            self.host_pattern = host.strip()
+            self.pattern = komut.strip()
+
     def matches(self, tool_name, args):
         if self.tool != tool_name:
             return False
@@ -128,6 +142,12 @@ class Rule:
             return True
 
         if tool_name in COMMAND_TOOLS:
+            # Sunucu kapsamı verilmişse önce o tutmalı. Bash'te host yok,
+            # yani sunucu kapsamlı bir kural yerel komutlara uygulanmaz.
+            if self.host_pattern is not None:
+                host = args.get("host") or ""
+                if not host or not fnmatch.fnmatch(host, self.host_pattern):
+                    return False
             return self._match_command(args.get("command", ""))
 
         # Yol tabanlı araçlar: deseni dosya yoluna uygula.
@@ -259,12 +279,16 @@ class PermissionSet:
         if not parts:
             return False
 
+        # Sunucu adı parçalara da taşınmalı: kural "skyup::df -h:*" ise
+        # zincirin her parçası aynı sunucuda çalışıyor.
+        host = args.get("host") or ""
+
         if require_all_parts:
             # İzin için: her parça izinli olmalı.
-            return all(rule.matches(tool_name, dict(command=p)) for p in parts)
+            return all(rule.matches(tool_name, dict(command=p, host=host)) for p in parts)
 
         # Reddetme için: tek bir parçanın eşleşmesi yeter.
-        return any(rule.matches(tool_name, dict(command=p)) for p in parts)
+        return any(rule.matches(tool_name, dict(command=p, host=host)) for p in parts)
 
 
 def matches_any(rules, tool_name, args):
@@ -281,6 +305,7 @@ def suggest_rule(tool_name, args):
     """
     if tool_name in COMMAND_TOOLS:
         command = (args.get("command") or "").strip()
+        host = (args.get("host") or "").strip()
         parts = split_command(command)
         base = parts[0] if parts else command
         try:
@@ -294,6 +319,10 @@ def suggest_rule(tool_name, args):
         head = (
             " ".join(tokens[:2]) if len(tokens) > 1 and not tokens[1].startswith("-") else tokens[0]
         )
+        # Uzak komutta kural sunucuya da daraltılır: skyup'ta onayladığın bir
+        # komut üretim sunucusunda onaysız kalmamalı.
+        if host:
+            return f"{tool_name}({host}::{head}:*)"
         return f"{tool_name}({head}:*)"
     return tool_name
 

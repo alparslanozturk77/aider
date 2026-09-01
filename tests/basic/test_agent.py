@@ -811,20 +811,30 @@ class TestSuggestRule(unittest.TestCase):
     def test_non_bash_tool(self):
         self.assertEqual(suggest_rule("Write", {"file_path": "a.py"}), "Write")
 
-    def test_ssh_kurali_komuta_daralir(self):
+    def test_ssh_kurali_komuta_ve_sunucuya_daralir(self):
         """Uzak komutta "bir daha sorma" her sunucuyu açmamalı.
 
         Çıplak "Ssh" kuralı her hostta her komutu onaysız hâle getiriyordu:
         tek bir "df -h" onayı, tanımlı bütün sunucularda "rm -rf" demekti.
         """
         kural = suggest_rule("Ssh", {"host": "skyup", "command": "yum check-update"})
-        self.assertEqual(kural, "Ssh(yum check-update:*)")
-        self.assertNotEqual(kural, "Ssh")
+        self.assertEqual(kural, "Ssh(skyup::yum check-update:*)")
 
     def test_ssh_kurali_baska_komutu_kapsamaz(self):
         kural = Rule(suggest_rule("Ssh", {"host": "skyup", "command": "df -h"}))
-        self.assertTrue(kural.matches("Ssh", {"command": "df -h /var"}))
-        self.assertFalse(kural.matches("Ssh", {"command": "rm -rf /var"}))
+        self.assertTrue(kural.matches("Ssh", {"host": "skyup", "command": "df -h /var"}))
+        self.assertFalse(kural.matches("Ssh", {"host": "skyup", "command": "rm -rf /var"}))
+
+    def test_ssh_kurali_baska_sunucuyu_kapsamaz(self):
+        # Asıl kazanç bu: test sunucusunda onayladığın komut üretimde
+        # onaysız kalmamalı.
+        kural = Rule(suggest_rule("Ssh", {"host": "skyup", "command": "df -h"}))
+        self.assertTrue(kural.matches("Ssh", {"host": "skyup", "command": "df -h"}))
+        self.assertFalse(kural.matches("Ssh", {"host": "uretim01", "command": "df -h"}))
+
+    def test_sunucu_kapsamli_kural_yerel_bashi_kapsamaz(self):
+        kural = Rule("Ssh(skyup::rm -rf /tmp)")
+        self.assertFalse(kural.matches("Bash", {"command": "rm -rf /tmp"}))
 
 
 class TestNoktaliYolEslesmesi(unittest.TestCase):
@@ -3041,3 +3051,235 @@ class TestOturumButcesi(unittest.TestCase):
 
         gecmis = self._gecmis()
         self.assertEqual(len(budala(gecmis, 10_000_000)), len(gecmis))
+
+
+class TestOturumDevamiUctanUca(unittest.TestCase):
+    """Gerçek coder yazsın, ikinci coder sürdürsün."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.prev = os.getcwd()
+        os.chdir(self.root)
+
+    def tearDown(self):
+        os.chdir(self.prev)
+        self.tmp.cleanup()
+
+    def _coder(self, yanit="tamam", **kwargs):
+        from aider.coders import Coder
+        from aider.io import InputOutput
+        from aider.models import Model
+
+        coder = Coder.create(
+            main_model=Model("gpt-4o"),
+            edit_format="agent",
+            io=InputOutput(yes=True, pretty=False, fancy_input=False),
+            fnames=[],
+            use_git=False,
+            stream=False,
+            **kwargs,
+        )
+        coder.auto_lint = False
+        coder.auto_test = False
+        coder.main_model.send_completion = lambda messages, functions, stream, temperature=None: (
+            MagicMock(),
+            FakeCompletion(FakeMessage(content=yanit)),
+        )
+        return coder
+
+    def test_oturum_diske_yazilir_ve_geri_yuklenir(self):
+        birinci = self._coder("ilk cevap")
+        list(birinci.send_message("skyup diskini kontrol et"))
+        self.assertTrue(birinci.oturumlar.path.is_file())
+
+        ikinci = self._coder("ikinci cevap", devam=True)
+        self.assertIsNotNone(ikinci.devam_edilen)
+        icerik = "".join(str(m.get("content") or "") for m in ikinci.done_messages)
+        self.assertIn("skyup diskini kontrol et", icerik)
+        self.assertIn("ilk cevap", icerik)
+
+    def test_devam_verilmezse_gecmis_bos(self):
+        birinci = self._coder()
+        list(birinci.send_message("bir şey"))
+        ikinci = self._coder()
+        self.assertIsNone(ikinci.devam_edilen)
+        self.assertEqual(ikinci.done_messages, [])
+
+    def test_onceki_oturum_yoksa_uyarir(self):
+        from aider.io import InputOutput
+
+        io = InputOutput(yes=True, pretty=False, fancy_input=False)
+        with patch.object(io, "tool_warning") as uyari:
+            from aider.coders import Coder
+            from aider.models import Model
+
+            Coder.create(
+                main_model=Model("gpt-4o"),
+                edit_format="agent",
+                io=io,
+                fnames=[],
+                use_git=False,
+                devam=True,
+            )
+        mesajlar = [c.args[0] for c in uyari.call_args_list if c.args]
+        self.assertTrue(any("önceki oturum" in m for m in mesajlar), mesajlar)
+
+    def test_devam_duyuruda_gorunur(self):
+        birinci = self._coder()
+        list(birinci.send_message("envanteri doğrula"))
+        ikinci = self._coder(devam=True)
+        satirlar = ikinci.get_announcements()
+        self.assertTrue(any("Önceki oturum sürdürülüyor" in s for s in satirlar), satirlar)
+
+
+class TestBaglamToparlama(unittest.TestCase):
+    """Araç döngüsü içinde bağlam dolarsa eski çıktılar kısaltılmalı.
+
+    check_tokens yalnızca döngüden ÖNCE bakıyordu; oysa bağlamı şişiren şey
+    döngünün kendisi. On tur "rpm -qa" çıktısı pencereyi bitiriyor ve model
+    işin ortasında sert bir API hatasıyla düşüyordu.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.prev = os.getcwd()
+        os.chdir(self.tmp.name)
+
+        from aider.coders import Coder
+        from aider.io import InputOutput
+        from aider.models import Model
+
+        self.coder = Coder.create(
+            main_model=Model("gpt-4o"),
+            edit_format="agent",
+            io=InputOutput(yes=True, pretty=False, fancy_input=False),
+            fnames=[],
+            use_git=False,
+            stream=False,
+        )
+
+    def tearDown(self):
+        os.chdir(self.prev)
+        self.tmp.cleanup()
+
+    def _gecmis(self, tur=10, boyut=5000):
+        mesajlar = [dict(role="user", content="paketleri incele")]
+        for i in range(tur):
+            mesajlar += [
+                dict(
+                    role="assistant",
+                    content="",
+                    tool_calls=[
+                        dict(
+                            id=f"c{i}",
+                            type="function",
+                            function=dict(name="Bash", arguments="{}"),
+                        )
+                    ],
+                ),
+                dict(role="tool", tool_call_id=f"c{i}", name="Bash", content="p" * boyut),
+            ]
+        return mesajlar
+
+    def test_sinir_altinda_hicbir_sey_degismez(self):
+        gecmis = self._gecmis(tur=1, boyut=100)
+        onceki = [dict(m) for m in gecmis]
+        self.assertTrue(self.coder._baglami_toparla(gecmis))
+        self.assertEqual(gecmis, onceki)
+
+    def test_eski_arac_ciktilari_kisaltilir(self):
+        gecmis = self._gecmis()
+        with patch.object(self.coder, "_baglam_siniri", return_value=20_000):
+            self.assertTrue(self.coder._baglami_toparla(gecmis))
+        toplam = sum(len(str(m.get("content") or "")) for m in gecmis)
+        self.assertLessEqual(toplam, 20_000)
+        self.assertTrue(
+            any("kısaltıldı" in str(m.get("content") or "") for m in gecmis)
+        )
+
+    def test_arac_mesajlari_atilmaz_yetim_kalmaz(self):
+        # tool mesajını tümden atmak, tool_calls taşıyan assistant mesajını
+        # yanıtsız bırakır ve endpoint isteği reddeder.
+        gecmis = self._gecmis()
+        onceki_roller = [m["role"] for m in gecmis]
+        with patch.object(self.coder, "_baglam_siniri", return_value=15_000):
+            self.coder._baglami_toparla(gecmis)
+        self.assertEqual([m["role"] for m in gecmis], onceki_roller)
+        for msg in gecmis:
+            if msg["role"] == "tool":
+                self.assertTrue(msg.get("tool_call_id"))
+
+    def test_son_mesajlar_korunur(self):
+        from aider.coders.agent_coder import KORUNAN_SON_MESAJ
+
+        gecmis = self._gecmis()
+        with patch.object(self.coder, "_baglam_siniri", return_value=15_000):
+            self.coder._baglami_toparla(gecmis)
+        for msg in gecmis[-KORUNAN_SON_MESAJ:]:
+            self.assertNotIn("kısaltıldı", str(msg.get("content") or ""))
+
+    def test_yer_acilamazsa_false_doner(self):
+        gecmis = self._gecmis(tur=2, boyut=50_000)
+        with patch.object(self.coder, "_baglam_siniri", return_value=100):
+            self.assertFalse(self.coder._baglami_toparla(gecmis))
+
+    def test_pencere_bilinmiyorsa_dokunulmaz(self):
+        gecmis = self._gecmis()
+        onceki = [dict(m) for m in gecmis]
+        with patch.object(self.coder, "_baglam_siniri", return_value=None):
+            self.assertTrue(self.coder._baglami_toparla(gecmis))
+        self.assertEqual(gecmis, onceki)
+
+    def test_kullanici_bilgilendirilir(self):
+        gecmis = self._gecmis()
+        with patch.object(self.coder, "_baglam_siniri", return_value=20_000):
+            with patch.object(self.coder.io, "tool_warning") as uyari:
+                self.coder._baglami_toparla(gecmis)
+        satirlar = [c.args[0] for c in uyari.call_args_list if c.args]
+        self.assertTrue(any("Bağlam doluyordu" in s for s in satirlar), satirlar)
+
+
+class TestSunucuKapsamliKurallar(unittest.TestCase):
+    """Ssh(sunucu::komut) — kural yalnızca o sunucuda geçerli.
+
+    Öncesinde kural yalnızca komuta göre daralıyordu: test sunucusunda
+    onayladığın bir komut üretim sunucusunda da onaysız çalışıyordu.
+    """
+
+    def test_glob_ile_sunucu_kumesi(self):
+        kural = Rule("Ssh(test-*::uptime)")
+        self.assertTrue(kural.matches("Ssh", {"host": "test-web01", "command": "uptime"}))
+        self.assertFalse(kural.matches("Ssh", {"host": "uretim01", "command": "uptime"}))
+
+    def test_izin_karari_sunucuya_bagli(self):
+        perms = PermissionSet(allow=["Ssh(skyup::systemctl restart:*)"], mode=MODE_ASK)
+        izinli = dict(host="skyup", command="systemctl restart nginx")
+        yasak = dict(host="uretim01", command="systemctl restart nginx")
+        self.assertEqual(perms.decide("Ssh", izinli, mutating=True), ALLOW)
+        self.assertEqual(perms.decide("Ssh", yasak, mutating=True), ASK)
+
+    def test_sunucusuz_kural_her_sunucuda_gecerli(self):
+        # Reddetme kurallarında istenen davranış bu.
+        perms = PermissionSet(deny=["Ssh(rm -rf:*)"], mode=MODE_AUTO)
+        for host in ("skyup", "uretim01", "srvsatellite"):
+            self.assertEqual(
+                perms.decide("Ssh", dict(host=host, command="rm -rf /var"), mutating=True),
+                DENY,
+            )
+
+    def test_zincirdeki_her_parca_ayni_sunucuda_denetlenir(self):
+        perms = PermissionSet(allow=["Ssh(skyup::df -h:*)"], mode=MODE_ASK)
+        # İkinci parça izinli değil: tümü onaylanmamalı.
+        karar = perms.decide(
+            "Ssh", dict(host="skyup", command="df -h && rm -rf /tmp"), mutating=True
+        )
+        self.assertNotEqual(karar, ALLOW)
+
+    def test_bash_reddi_hala_uzaga_genisler(self):
+        # Bash(...) reddi sunucu kapsamı olmadan her hostu kapsamayı sürdürmeli.
+        perms = PermissionSet(mode=MODE_AUTO)
+        self.assertEqual(
+            perms.decide("Ssh", dict(host="skyup", command="mkfs.ext4 /dev/sda"), mutating=True),
+            DENY,
+        )

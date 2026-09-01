@@ -26,6 +26,7 @@ from aider.agent.skills import SkillLibrary, SkillTool, default_skill_roots
 from aider.agent.ssh_tool import SshTool
 from aider.agent.todo import TodoList, TodoWriteTool
 from aider.agent.tools import (
+    KARAKTER_BASINA_TOKEN,
     BashTool,
     EditTool,
     GlobTool,
@@ -77,6 +78,19 @@ BECERI_TAVANI = 8_000
 # Geri yüklenen önceki oturumun bağlam penceresinden alabileceği pay.
 # Geçmiş, iş yapacak yerin tamamını yiyemez.
 DEVAM_PAYI = 0.30
+
+# Araç döngüsü içinde bağlamın bu oranı dolduğunda eski araç çıktıları
+# kısaltılır. check_tokens yalnızca döngüden ÖNCE bakıyordu; oysa bağlamı
+# şişiren şey döngünün kendisi: on tur "rpm -qa" çıktısı pencereyi bitiriyor
+# ve model ortada sert bir API hatasıyla düşüyor.
+DOLULUK_ESIGI = 0.85
+
+# Kısaltmadan muaf tutulan son mesaj sayısı. Model en azından son birkaç
+# adımın sonucunu ham görmeli, yoksa ne yaptığını unutuyor.
+KORUNAN_SON_MESAJ = 6
+
+# Bundan kısa araç sonuçlarını kısaltmanın kazancı yok.
+KISALTMA_ESIGI = 400
 
 
 class AgentCoder(Coder):
@@ -388,6 +402,13 @@ class AgentCoder(Coder):
         litellm_ex = LiteLLMExceptions()
 
         for iteration in range(self.max_iterations):
+            if not self._baglami_toparla(working):
+                self.io.tool_error(
+                    "Bağlam penceresi doldu ve kısaltacak eski araç çıktısı kalmadı."
+                    " İşi daha küçük adımlara böl."
+                )
+                break
+
             tools = self.registry.schemas(enabled=self.available_tools())
 
             self.partial_response_content = ""
@@ -522,6 +543,62 @@ class AgentCoder(Coder):
 
         self.io.tool_output(f"Beceri otomatik yüklendi: {skill.name} ({', '.join(vurus)})")
         return skill
+
+    def _baglam_siniri(self):
+        """Araç döngüsünde aşılmaması gereken karakter sayısı."""
+        try:
+            pencere = (self.main_model.info or {}).get("max_input_tokens")
+        except Exception:
+            pencere = None
+        if not pencere:
+            return None
+        return int(pencere * DOLULUK_ESIGI) * KARAKTER_BASINA_TOKEN
+
+    def _baglami_toparla(self, working):
+        """Bağlam dolmak üzereyse en eski araç çıktılarını kısalt.
+
+        Devam edilebiliyorsa True, yer açılamadıysa False döner.
+
+        Kısaltılan yalnızca `role="tool"` mesajlarının gövdesi; mesajın
+        kendisi ve `tool_call_id`'si yerinde kalıyor. Mesajı tümden atmak
+        `tool_calls` taşıyan assistant mesajını yanıtsız bırakır ve endpoint
+        isteği reddeder.
+
+        Sözlükler `turn_messages` ile paylaşımlı, yani kısaltma kalıcı
+        geçmişe ve oturum kaydına da yansıyor. Bu bilinçli: aynı devasa çıktı
+        bir sonraki turda ve --continue ile geri yüklemede yine yer yiyecekti.
+        """
+        sinir = self._baglam_siniri()
+        if not sinir:
+            return True
+
+        def toplam():
+            return sum(len(str(msg.get("content") or "")) for msg in working)
+
+        if toplam() <= sinir:
+            return True
+
+        kisaltilan = 0
+        for msg in working[:-KORUNAN_SON_MESAJ]:
+            if msg.get("role") != "tool":
+                continue
+            icerik = str(msg.get("content") or "")
+            if len(icerik) <= KISALTMA_ESIGI:
+                continue
+            msg["content"] = (
+                f"(eski araç çıktısı bağlam için kısaltıldı, {len(icerik)} karakterdi)\n"
+                + icerik[:KISALTMA_ESIGI]
+            )
+            kisaltilan += 1
+            if toplam() <= sinir:
+                break
+
+        if kisaltilan:
+            self.io.tool_warning(
+                f"Bağlam doluyordu: {kisaltilan} eski araç çıktısı kısaltıldı."
+            )
+
+        return toplam() <= sinir
 
     def _one_turn(self, messages, tools):
         """Modele bir istek at, (metin, tool_calls) döndür."""
