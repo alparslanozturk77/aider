@@ -154,6 +154,7 @@ def _check_cli_flags():
         "--max-tool-iterations",
         "--offline",
         "--auto-skills",
+        "--auto-compact",
         "--continue",
     ]
     missing = [f for f in required if f not in known]
@@ -367,7 +368,7 @@ def _check_commands():
     gerekli = [
         "agent", "plan", "mod", "skills", "mcp", "permissions",
         "todo", "hatirla", "bellek", "unut", "model_ekle", "beceri_uret",
-        "oturumlar",
+        "oturumlar", "ozet",
     ]
     eksik = [k for k in gerekli if not hasattr(Commands, f"cmd_{k}")]
     if eksik:

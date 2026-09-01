@@ -36,6 +36,7 @@ aider/agent/
   plan.py         Plan modu
   model_setup.py  /model-ekle akışı
   oturum.py       Oturum kaydı (JSONL) ve --continue ile geri yükleme
+  sikistirma.py   Bağlam özeti (/ozet) ve otomatik sıkıştırma
 
 aider/coders/
   agent_coder.py     Araç döngüsü
@@ -51,10 +52,10 @@ değiştirmek zorunda kalırsan yamayı en küçük blokta tut ve nedenini yorum
 |---|---|
 | `aider/models.py` | `send_completion` çok araçlı `tool_choice="auto"` destekliyor; `ModelInfoManager.set_offline()` |
 | `aider/coders/__init__.py` | `AgentCoder` kaydı |
-| `aider/args.py` | `--agent`, `--plan`, `--auto`, `--permission-mode`, `--max-tool-iterations`, `--offline`, `--auto-skills`, `--continue` |
+| `aider/args.py` | `--agent`, `--plan`, `--auto`, `--permission-mode`, `--max-tool-iterations`, `--offline`, `--auto-skills`, `--auto-compact`, `--continue` |
 | `aider/main.py` | Agent kwarg'ları yalnızca agent coder'a; repo map agent modunda kapalı; `--offline` zorlaması; coder değişiminde agent kancalarının bırakılması |
 | `aider/io.py` | Mod göstergesi kancaları ve `shift+tab` |
-| `aider/commands.py` | On üç slash komutu; `/voice` çevrimdışı modda kapalı |
+| `aider/commands.py` | On dört slash komutu; `/voice` çevrimdışı modda kapalı |
 | `.gitignore` | `.env` ve `.mcp.json` ignore |
 | `README.md` | Fork'un kendi ön yüzü; upstream'inki `ORIJINAL-README.md` |
 
@@ -303,6 +304,29 @@ var; harita her isteğe yeniden giriyor ve sohbete dosya eklenmemişken
 **Bellek ve proje talimatı bütçeleri pencereye göre ölçekleniyor.** Sabit
 12.000 ve 20.000 karakter, 8k pencereli bir modelde iş yapacak yer
 bırakmıyordu; artık pencerenin yüzde 10'u ve 15'i, eski değerler tavan.
+
+**Uzun oturumlar özetlenerek sıkıştırılıyor.** `_baglami_toparla` yalnızca
+tek bir mesajın araç döngüsü içinde çalışıyordu; turlar arasında biriken
+geçmişe kimse dokunmuyordu. Aider'da o işi `move_back_cur_messages` yapar
+ama agent modunda o çağrı yalnızca **dosya düzenlendiğinde** yürüyor —
+teşhis oturumlarının çoğu hiçbir dosyaya dokunmuyor, dolayısıyla geçmiş
+sınırsız büyüyordu.
+
+`aider/agent/sikistirma.py` geçmişi modele özetletip yerine koyuyor. Son iki
+kullanıcı turu aynen kalıyor. `/ozet` elle çalıştırır (`/ozet 4` dört tur
+korur), pencere dolmaya yaklaşınca kendiliğinden de tetiklenir;
+`--no-auto-compact` bunu kapatır.
+
+Veri kaybı yok: özet yalnızca modele giden bağlamı değiştirir, oturumun tam
+kaydı `.aider/sessions/` altındaki JSONL'de durmaya devam eder.
+
+İki tuzağı var, ikisi de sınanıyor. Kesme noktası her zaman bir `user`
+mesajına hizalanıyor — ortada kalan bir `tool_calls` endpoint tarafından
+reddediliyor (`oturum.budala` ile aynı sebep). Özet mesajı `assistant`
+rolünde giriyor: hemen ardından korunan blok `user` ile başlıyor ve arka
+arkaya iki `user` mesajı vLLM/Qwen sohbet şablonlarını bozuyor. Bir de arka
+arkaya sıkıştırmalarda önceki özet döküme her zaman tam giriyor, yoksa en
+eski bilgi tur tur eriyor.
 
 ## Beceri tetikleme deterministik
 

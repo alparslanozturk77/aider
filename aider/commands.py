@@ -1342,6 +1342,21 @@ Sonucun kullanıcıya nasıl sunulacağını tarif et.
         self.io.tool_output()
         self.io.tool_output("En sonuncusunu sürdürmek için: aider --continue")
 
+    def cmd_ozet(self, args):
+        """Konuşmayı özetleyip bağlamı boşaltır; son iki tur aynen kalır. /ozet [korunan tur]"""  # noqa
+        coder = self._require_agent()
+        if not coder:
+            return
+
+        korunan = args.strip()
+        if korunan:
+            if not korunan.isdigit() or int(korunan) < 1:
+                self.io.tool_error("Korunacak tur sayısı 1 ya da daha büyük bir sayı olmalı.")
+                return
+            coder.sikistir(int(korunan))
+        else:
+            coder.sikistir()
+
     def cmd_beceri_uret(self, args):
         """Programın --help ağacından beceri iskeleti üretir: /beceri-uret <program> [--host <sunucu>] [--ad <beceri>]"""  # noqa
         coder = self._require_agent()

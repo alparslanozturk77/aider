@@ -202,6 +202,15 @@ def get_parser(default_config_files, git_root):
         ),
     )
     group.add_argument(
+        "--auto-compact",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Summarize the conversation automatically before the context window fills"
+            " (default: True). The full session stays on disk either way."
+        ),
+    )
+    group.add_argument(
         "--offline",
         action="store_true",
         default=False,

@@ -22,6 +22,7 @@ from aider.agent.memory import (
 from aider.agent.oturum import DEVAM_BUTCESI, SessionStore
 from aider.agent.permissions import MODE_ASK, MODE_AUTO, MODE_PLAN, load_permissions
 from aider.agent.registry import ToolContext, ToolRegistry
+from aider.agent import sikistirma
 from aider.agent.skills import SkillLibrary, SkillTool, default_skill_roots
 from aider.agent.ssh_tool import SshTool
 from aider.agent.todo import TodoList, TodoWriteTool
@@ -104,6 +105,7 @@ class AgentCoder(Coder):
         self.max_iterations = kwargs.pop("max_iterations", DEFAULT_MAX_ITERATIONS)
         self.offline = kwargs.pop("offline", False)
         self.otomatik_beceri = kwargs.pop("auto_skills", True)
+        self.otomatik_ozet = kwargs.pop("auto_compact", True)
         devam = kwargs.pop("devam", False)
         permission_mode = kwargs.pop("permission_mode", None) or (
             MODE_PLAN if self.plan_mode else MODE_ASK
@@ -384,6 +386,7 @@ class AgentCoder(Coder):
             self.aider_edited_files = set()
 
         self.cur_messages += [dict(role="user", content=inp)]
+        self._oto_sikistir()
 
         chunks = self.format_messages()
         messages = chunks.all_messages()
@@ -553,6 +556,70 @@ class AgentCoder(Coder):
         if not pencere:
             return None
         return int(pencere * DOLULUK_ESIGI) * KARAKTER_BASINA_TOKEN
+
+    def _oto_sikistir(self):
+        """Turlar arası biriken geçmişi, pencere dolmadan önce özetle.
+
+        `_baglami_toparla` yalnızca tek bir mesajın araç döngüsü içinde
+        işliyor; turlar arasında biriken geçmişe dokunmuyor. Dokunması da
+        gerekmiyordu: aider normalde `move_back_cur_messages` ile geçmişi
+        `done_messages`'a taşıyıp upstream özetleyicisini tetikliyor. Ama
+        agent modunda o çağrı yalnızca dosya DÜZENLENDİĞİNDE yapılıyor —
+        teşhis oturumlarının çoğu hiçbir dosyayı değiştirmiyor, dolayısıyla
+        geçmiş hiç özetlenmeden sınırsız büyüyordu.
+        """
+        if not self.otomatik_ozet:
+            return
+        sinir = self._baglam_siniri()
+        if not sinir:
+            return
+
+        mesajlar = self.done_messages + self.cur_messages
+        if sikistirma.toplam_karakter(mesajlar) <= sinir:
+            return
+
+        self.io.tool_warning("Bağlam doluyor, geçmiş otomatik özetleniyor.")
+        self.sikistir()
+
+    def sikistir(self, korunan_tur=sikistirma.KORUNAN_TUR):
+        """Geçmişi özetle ve yerine koy; özetlenen mesaj sayısını döndür.
+
+        Sıfır dönmesi bir hata değil: özetlenecek kadar geçmiş yoktu ya da
+        model özet üretemedi. İki durumda da eski geçmiş olduğu gibi kalır —
+        yarım bir özetle değiştirmek, hiç özetlememekten kötü.
+        """
+        mesajlar = self.done_messages + self.cur_messages
+        kes = sikistirma.kesme_noktasi(mesajlar, korunan_tur)
+        if kes <= 0:
+            self.io.tool_output("Özetlenecek kadar geçmiş yok.")
+            return 0
+
+        onceki = sikistirma.toplam_karakter(mesajlar)
+        self.io.tool_output(f"{kes} mesaj özetleniyor…")
+
+        try:
+            metin = self.main_model.simple_send_with_retries(
+                sikistirma.istem(sikistirma.dokum(mesajlar[:kes]))
+            )
+        except Exception as err:
+            self.io.tool_error(f"Özetleme başarısız, geçmiş olduğu gibi bırakıldı: {err}")
+            return 0
+
+        if not (metin or "").strip():
+            self.io.tool_error("Model boş özet döndürdü, geçmiş olduğu gibi bırakıldı.")
+            return 0
+
+        self.done_messages = sikistirma.uygula(mesajlar, metin, kes)
+        self.cur_messages = []
+
+        sonraki = sikistirma.toplam_karakter(self.done_messages)
+        self.io.tool_output(
+            f"Bağlam özetlendi: {onceki:,} → {sonraki:,} karakter"
+            f" (son {korunan_tur} tur aynen korundu)."
+        )
+        if self.oturumlar.path:
+            self.io.tool_output(f"Tam kayıt duruyor: {self.oturumlar.path}")
+        return kes
 
     def _baglami_toparla(self, working):
         """Bağlam dolmak üzereyse en eski araç çıktılarını kısalt.

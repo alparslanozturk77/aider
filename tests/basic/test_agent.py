@@ -3705,3 +3705,213 @@ class TestMCPHataAyrintisi(unittest.TestCase):
             pass
         server.stop()
         self.assertIsNone(server._stderr_dosyasi)
+
+
+from aider.agent import sikistirma  # noqa: E402
+
+
+class TestSikistirmaKesme(unittest.TestCase):
+    """Özet kesme noktası araç çağrısı çiftlerini bölmemeli.
+
+    tool_calls taşıyan assistant mesajı kendi role="tool" yanıtlarından
+    ayrılırsa endpoint isteği reddediyor — oturum budamasındaki tuzağın aynısı.
+    """
+
+    def _gecmis(self, tur=5):
+        mesajlar = []
+        for i in range(tur):
+            mesajlar += [
+                dict(role="user", content=f"istek {i}"),
+                dict(
+                    role="assistant",
+                    content="",
+                    tool_calls=[
+                        dict(
+                            id=f"c{i}",
+                            type="function",
+                            function=dict(name="Bash", arguments='{"command":"ls"}'),
+                        )
+                    ],
+                ),
+                dict(role="tool", tool_call_id=f"c{i}", name="Bash", content="çıktı " * 50),
+                dict(role="assistant", content=f"özet {i}"),
+            ]
+        return mesajlar
+
+    def test_kesme_her_zaman_user_mesajina_denk_gelir(self):
+        mesajlar = self._gecmis()
+        for korunan in (1, 2, 3, 4):
+            kes = sikistirma.kesme_noktasi(mesajlar, korunan)
+            self.assertEqual(mesajlar[kes]["role"], "user", f"korunan={korunan}")
+
+    def test_korunan_blokta_yetim_tool_mesaji_kalmaz(self):
+        mesajlar = self._gecmis()
+        for korunan in (1, 2, 3):
+            kalan = mesajlar[sikistirma.kesme_noktasi(mesajlar, korunan) :]
+            acik = set()
+            for msg in kalan:
+                for cagri in msg.get("tool_calls") or []:
+                    acik.add(cagri["id"])
+                if msg.get("role") == "tool":
+                    self.assertIn(msg["tool_call_id"], acik, f"yetim tool, korunan={korunan}")
+
+    def test_yeterince_gecmis_yoksa_sifir(self):
+        self.assertEqual(sikistirma.kesme_noktasi(self._gecmis(tur=2), 2), 0)
+        self.assertEqual(sikistirma.kesme_noktasi([], 2), 0)
+
+    def test_korunan_tur_sayisi_kadar_user_mesaji_kalir(self):
+        mesajlar = self._gecmis()
+        kalan = mesajlar[sikistirma.kesme_noktasi(mesajlar, 2) :]
+        self.assertEqual(sum(1 for m in kalan if m["role"] == "user"), 2)
+
+
+class TestSikistirmaDokum(unittest.TestCase):
+    def test_arac_cagrilari_ve_sonuclari_dokume_girer(self):
+        mesajlar = [
+            dict(role="user", content="diski kontrol et"),
+            dict(
+                role="assistant",
+                content="",
+                tool_calls=[
+                    dict(
+                        id="c1",
+                        type="function",
+                        function=dict(name="Ssh", arguments='{"host":"srvsatellite"}'),
+                    )
+                ],
+            ),
+            dict(role="tool", tool_call_id="c1", name="Ssh", content="/dev/sda3 %91"),
+        ]
+        metin = sikistirma.dokum(mesajlar)
+        self.assertIn("diski kontrol et", metin)
+        self.assertIn("Ssh(", metin)
+        self.assertIn("srvsatellite", metin)
+        self.assertIn("/dev/sda3 %91", metin)
+
+    def test_uzun_arac_ciktisi_kisaltilir(self):
+        mesajlar = [dict(role="tool", tool_call_id="c1", name="Bash", content="x" * 5_000)]
+        metin = sikistirma.dokum(mesajlar, arac_tavani=100)
+        self.assertLess(len(metin), 400)
+        self.assertIn("karakter", metin)
+
+    def test_onceki_ozet_kirpmadan_muaf(self):
+        # Arka arkaya sıkıştırmalarda en eski bilgi sessizce erimemeli.
+        onceki = sikistirma.ozet_mesaji("İLK OTURUMDA KURULAN SUNUCU: splsonatype01")
+        mesajlar = [onceki]
+        mesajlar += [dict(role="user", content="y" * 4_000) for _ in range(20)]
+        metin = sikistirma.dokum(mesajlar, tavan=5_000)
+        self.assertIn("splsonatype01", metin)
+        self.assertTrue(metin.startswith(sikistirma.OZET_ONEKI))
+
+
+class TestSikistirmaUygula(unittest.TestCase):
+    def test_ozet_assistant_rolunde(self):
+        # İki user mesajı arka arkaya gelirse vLLM/Qwen sohbet şablonu bozuluyor.
+        mesajlar = [dict(role="user", content=f"istek {i}") for i in range(5)]
+        yeni = sikistirma.uygula(mesajlar, "özet metni", sikistirma.kesme_noktasi(mesajlar, 2))
+        self.assertEqual(yeni[0]["role"], "assistant")
+        self.assertEqual(yeni[1]["role"], "user")
+        self.assertIn("özet metni", yeni[0]["content"])
+
+    def test_korunan_turlar_aynen_kalir(self):
+        mesajlar = [dict(role="user", content=f"istek {i}") for i in range(5)]
+        yeni = sikistirma.uygula(mesajlar, "özet", sikistirma.kesme_noktasi(mesajlar, 2))
+        self.assertEqual([m["content"] for m in yeni[1:]], ["istek 3", "istek 4"])
+
+
+class TestSikistirmaCoder(unittest.TestCase):
+    """Sıkıştırma coder'a bağlandığında gerçekten geçmişi değiştiriyor mu."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.prev = os.getcwd()
+        os.chdir(self.root)
+
+    def tearDown(self):
+        os.chdir(self.prev)
+        self.tmp.cleanup()
+
+    def _coder(self, **kwargs):
+        from aider.coders import Coder
+        from aider.io import InputOutput
+        from aider.models import Model
+
+        return Coder.create(
+            main_model=Model("gpt-4o"),
+            edit_format="agent",
+            io=InputOutput(yes=True, pretty=False, fancy_input=False),
+            fnames=[],
+            use_git=False,
+            stream=False,
+            **kwargs,
+        )
+
+    def _doldur(self, coder, tur=6):
+        coder.done_messages = []
+        coder.cur_messages = []
+        for i in range(tur):
+            coder.cur_messages += [
+                dict(role="user", content=f"istek {i}"),
+                dict(role="assistant", content="tamam " * 200),
+            ]
+
+    def test_sikistir_gecmisi_kucultur(self):
+        coder = self._coder()
+        self._doldur(coder)
+        onceki = sikistirma.toplam_karakter(coder.done_messages + coder.cur_messages)
+
+        coder.main_model.simple_send_with_retries = MagicMock(return_value="kısa özet")
+        kes = coder.sikistir()
+
+        self.assertGreater(kes, 0)
+        self.assertEqual(coder.cur_messages, [])
+        sonraki = sikistirma.toplam_karakter(coder.done_messages)
+        self.assertLess(sonraki, onceki)
+        self.assertIn("kısa özet", coder.done_messages[0]["content"])
+
+    def test_bos_ozet_gecmisi_bozmaz(self):
+        # Yarım bir özetle değiştirmek, hiç özetlememekten kötü.
+        coder = self._coder()
+        self._doldur(coder)
+        onceki = list(coder.cur_messages)
+
+        coder.main_model.simple_send_with_retries = MagicMock(return_value="  ")
+        self.assertEqual(coder.sikistir(), 0)
+        self.assertEqual(coder.cur_messages, onceki)
+
+    def test_ozetleme_hatasi_gecmisi_bozmaz(self):
+        coder = self._coder()
+        self._doldur(coder)
+        onceki = list(coder.cur_messages)
+
+        coder.main_model.simple_send_with_retries = MagicMock(side_effect=RuntimeError("bağlantı"))
+        self.assertEqual(coder.sikistir(), 0)
+        self.assertEqual(coder.cur_messages, onceki)
+
+    def test_oto_sikistirma_sinir_asilinca_tetiklenir(self):
+        coder = self._coder()
+        self._doldur(coder, tur=8)
+        coder._baglam_siniri = lambda: 100
+        coder.main_model.simple_send_with_retries = MagicMock(return_value="özet")
+
+        coder._oto_sikistir()
+        coder.main_model.simple_send_with_retries.assert_called_once()
+
+    def test_oto_sikistirma_kapatilabilir(self):
+        coder = self._coder(auto_compact=False)
+        self._doldur(coder, tur=8)
+        coder._baglam_siniri = lambda: 100
+        coder.main_model.simple_send_with_retries = MagicMock(return_value="özet")
+
+        coder._oto_sikistir()
+        coder.main_model.simple_send_with_retries.assert_not_called()
+
+    def test_sinir_asilmadan_tetiklenmez(self):
+        coder = self._coder()
+        self._doldur(coder, tur=2)
+        coder._baglam_siniri = lambda: 10_000_000
+        coder.main_model.simple_send_with_retries = MagicMock(return_value="özet")
+
+        coder._oto_sikistir()
+        coder.main_model.simple_send_with_retries.assert_not_called()

@@ -1046,6 +1046,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             permission_mode=args.permission_mode,
             offline=args.offline,
             auto_skills=args.auto_skills,
+            auto_compact=args.auto_compact,
             devam=args.devam,
         )
 
