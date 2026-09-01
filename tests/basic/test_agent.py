@@ -3417,3 +3417,156 @@ class TestAracDestegiDenemesi(unittest.TestCase):
                 run_setup(io, home=Path(tmp))
         uyarilar = [c.args[0] for c in io.tool_warning.call_args_list if c.args]
         self.assertTrue(any("araç çağırmadı" in u for u in uyarilar), uyarilar)
+
+
+class TestIkameAcigi(unittest.TestCase):
+    """Komut ikamesi oto modda reddetme listesini atlıyordu.
+
+    ÖLÇÜLDÜ: PermissionSet(mode=auto).decide("Bash", {"command":
+    "rm -rf $(echo /)"}) -> allow. Yerleşik "rm -rf /*" deseni ikame edilmiş
+    dizgeyle eşleşmiyor ve decide'ın sonundaki koşulsuz ALLOW komutu
+    geçiriyordu.
+    """
+
+    def setUp(self):
+        self.perms = PermissionSet(mode=MODE_AUTO)
+
+    def _karar(self, komut, arac="Bash"):
+        return self.perms.decide(arac, {"command": komut}, mutating=True)
+
+    def test_ikameli_komut_otomatik_onaylanmaz(self):
+        # Değişmez "ASK olsun" değil, "ALLOW OLMASIN": reddetme deseni zaten
+        # tutuyorsa DENY dönmesi daha güçlü bir sonuç.
+        for komut in (
+            "rm -rf $(echo /)",
+            "rm -rf `echo /`",
+            "dd if=$(cat /tmp/x) of=/dev/sda",
+            "cat <(echo tehlike)",
+        ):
+            self.assertNotEqual(self._karar(komut), ALLOW, komut)
+
+    def test_reddetme_desenine_uymayan_ikame_sorulur(self):
+        self.assertEqual(self._karar("rm -rf $(echo /)"), ASK)
+        self.assertEqual(self._karar("cat <(echo tehlike)"), ASK)
+
+    def test_eval_otomatik_onaylanmaz(self):
+        # eval komutun gerçek içeriğini dizgenin içine saklıyor.
+        self.assertEqual(self._karar('eval "rm -rf /"'), ASK)
+
+    def test_uzak_komutta_da_gecerli(self):
+        self.assertEqual(self._karar("rm -rf $(echo /)", arac="Ssh"), ASK)
+
+    def test_dogrudan_yikici_komut_hala_reddedilir(self):
+        self.assertEqual(self._karar("rm -rf /"), DENY)
+        self.assertEqual(self._karar("mkfs.ext4 /dev/sda"), DENY)
+
+    def test_zararsiz_komutlar_akisi_kesmez(self):
+        for komut in ("ls -la", "git status", "cat dosya.txt"):
+            self.assertEqual(self._karar(komut), ALLOW, komut)
+
+    def test_izin_kurali_ikameyi_actiramaz(self):
+        # Açık bir allow kuralı bile ikameli komutu otomatik onaylayamaz.
+        perms = PermissionSet(allow=["Bash(echo:*)"], mode=MODE_ASK)
+        self.assertEqual(
+            perms.decide("Bash", {"command": "echo $(whoami)"}, mutating=True), ASK
+        )
+
+
+class TestSshConfigInclude(unittest.TestCase):
+    """Kurum kurulumlarında ana dosya çoğu zaman yalnızca Include içeriyor."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.ssh = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_include_edilen_dosyadaki_hostlar_okunur(self):
+        from aider.agent.ssh_tool import known_hosts
+
+        (self.ssh / "config.d").mkdir()
+        (self.ssh / "config.d" / "kurum").write_text("Host srvsatellite\n  User root\n")
+        cfg = self.ssh / "config"
+        cfg.write_text("Include config.d/*\n\nHost skyup\n")
+
+        adlar = known_hosts(cfg)
+        self.assertIn("skyup", adlar)
+        self.assertIn("srvsatellite", adlar)
+
+    def test_mutlak_ve_goreli_include(self):
+        from aider.agent.ssh_tool import known_hosts
+
+        harici = self.ssh / "harici.conf"
+        harici.write_text("Host uzak01\n")
+        cfg = self.ssh / "config"
+        cfg.write_text(f"Include {harici}\n")
+        self.assertIn("uzak01", known_hosts(cfg))
+
+    def test_dongusel_include_sonsuza_gitmez(self):
+        from aider.agent.ssh_tool import known_hosts
+
+        a = self.ssh / "config"
+        b = self.ssh / "b.conf"
+        a.write_text("Include b.conf\nHost bir\n")
+        b.write_text("Include config\nHost iki\n")
+        adlar = known_hosts(a)
+        self.assertIn("bir", adlar)
+        self.assertIn("iki", adlar)
+
+    def test_olmayan_include_sessizce_atlanir(self):
+        from aider.agent.ssh_tool import known_hosts
+
+        cfg = self.ssh / "config"
+        cfg.write_text("Include yok/olan/*\nHost skyup\n")
+        self.assertEqual(known_hosts(cfg), ["skyup"])
+
+    def test_joker_hostlar_hala_atlanir(self):
+        from aider.agent.ssh_tool import known_hosts
+
+        cfg = self.ssh / "config"
+        cfg.write_text("Host *\n  ServerAliveInterval 60\n\nHost skyup\n")
+        self.assertEqual(known_hosts(cfg), ["skyup"])
+
+
+class TestCoderDegisiminde(unittest.TestCase):
+    """Agent'a bağlı durum coder değişince bırakılmalı.
+
+    Ölçüldü: /ask ile başka bir coder'a geçildiğinde io.agent_status hâlâ
+    ölü AgentCoder'a bağlı kalıyor ve prompt "⏵ onay modu" yazmayı
+    sürdürüyor — kullanıcı agent modunda sandığı hâlde değil.
+    """
+
+    def test_kancalar_temizlenir_ve_mcp_kapanir(self):
+        from aider.main import agent_kancalarini_birak
+
+        io = MagicMock()
+        io.agent_status = lambda: "⏵ onay modu"
+        io.agent_cycle_mode = lambda: None
+        coder = MagicMock()
+
+        agent_kancalarini_birak(io, coder)
+
+        self.assertIsNone(io.agent_status)
+        self.assertIsNone(io.agent_cycle_mode)
+        coder.mcp.shutdown.assert_called_once()
+
+    def test_mcp_olmayan_coder_sorun_cikarmaz(self):
+        from aider.main import agent_kancalarini_birak
+
+        io = MagicMock()
+
+        class Sade:
+            pass
+
+        agent_kancalarini_birak(io, Sade())
+        self.assertIsNone(io.agent_status)
+
+    def test_mcp_kapanma_hatasi_gecisi_engellemez(self):
+        from aider.main import agent_kancalarini_birak
+
+        io = MagicMock()
+        coder = MagicMock()
+        coder.mcp.shutdown.side_effect = OSError("süreç yok")
+        agent_kancalarini_birak(io, coder)
+        self.assertIsNone(io.agent_status)

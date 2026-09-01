@@ -381,7 +381,9 @@ Ayrı bir araç olmasının sebebi bu.
 
 Sunucu adı üç kaynakta aranır:
 
-1. `~/.ssh/config` — takma adlar
+1. `~/.ssh/config` — takma adlar (`Include` satırları izlenir; kurum
+   kurulumlarında ana dosya çoğu zaman yalnızca `Include ~/.ssh/config.d/*`
+   içerir ve sunucular o dizinde durur)
 2. `~/.ssh/known_hosts` — daha önce bağlanılmış makineler (karma girdiler
    geri çözülemediği için atlanır)
 3. **ansible envanterleri** — proje kökünde ve bir alt dizinde `hosts*.ini`,
@@ -580,6 +582,12 @@ Kalıcı yapmak için dosyaya yazman gerekir.
 
 **Asla çalışmaz** (`allow` ile bile açılamaz): `rm -rf /*`, `rm -rf ~*`,
 `mkfs*`, `dd if=*`. Geri alınamaz ve felaketle sonuçlanır.
+
+**Komut ikamesi hiçbir zaman otomatik onaylanmaz.** `$(...)`, backtick ve
+`<(...)` içeren bir komut ne `allow` kuralıyla ne de oto modda kendiliğinden
+geçer; her zaman sorulur. Sebep ölçüldü: bu denetim olmadan oto modda
+`rm -rf $(echo /)` izin alıyordu — yerleşik `rm -rf /*` deseni ikame edilmiş
+dizgeyle eşleşmiyor. Aynı gerekçeyle `eval` de sorma listesinde.
 
 **Oto modda bile sorulur** (ama `allow` ile açılabilir):
 

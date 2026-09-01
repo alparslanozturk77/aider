@@ -34,6 +34,10 @@ DEFAULT_TIMEOUT = 60
 MAX_TIMEOUT = 600
 
 _HOST_LINE = re.compile(r"^\s*Host\s+(.+?)\s*$", re.IGNORECASE)
+_INCLUDE_LINE = re.compile(r"^\s*Include\s+(.+?)\s*$", re.IGNORECASE)
+
+# Include zinciri döngüye girebilir; derinlik sınırı onu keser.
+MAX_INCLUDE_DERINLIK = 3
 
 KNOWN_HOSTS = Path.home() / ".ssh" / "known_hosts"
 
@@ -166,24 +170,63 @@ def bilinen_sunucular(root=None):
     return out
 
 
-def known_hosts(config_path=None):
-    """~/.ssh/config içindeki takma adları oku.
+def _include_yollari(kalip, taban):
+    """Include satırındaki kalıbı gerçek dosya yollarına çevir.
+
+    Göreli yollar ssh'ın kendi kuralına göre ~/.ssh'a göredir, çalışma
+    dizinine göre değil.
+    """
+    kalip = kalip.strip().strip('"')
+    if not kalip:
+        return []
+
+    genisletilmis = Path(kalip).expanduser()
+    if not genisletilmis.is_absolute():
+        genisletilmis = taban / genisletilmis
+
+    if any(k in str(genisletilmis) for k in "*?["):
+        try:
+            kok = genisletilmis.parent
+            return sorted(kok.glob(genisletilmis.name))
+        except OSError:
+            return []
+    return [genisletilmis] if genisletilmis.is_file() else []
+
+
+def known_hosts(config_path=None, _derinlik=0):
+    """ssh yapılandırmasındaki takma adları oku, Include'ları izleyerek.
 
     Joker içerenler (`Host *`) atlanır: onlar bağlanılacak bir sunucu değil,
     diğer girdilere uygulanan varsayılanlardır.
+
+    Include desteği şart: kurum kurulumlarında ana dosya çoğu zaman yalnızca
+    `Include ~/.ssh/config.d/*` içeriyor ve sunucular o dizinde duruyor.
+    Okunmazsa hiçbir sunucu bilinmiyor görünür.
     """
     path = Path(config_path) if config_path else SSH_CONFIG
     if not path.is_file():
         return []
 
+    taban = path.parent
     adlar = []
     try:
         for satir in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            inc = _INCLUDE_LINE.match(satir)
+            if inc:
+                if _derinlik >= MAX_INCLUDE_DERINLIK:
+                    continue
+                for kalip in inc.group(1).split():
+                    for yol in _include_yollari(kalip, taban):
+                        for ad in known_hosts(yol, _derinlik + 1):
+                            if ad not in adlar:
+                                adlar.append(ad)
+                continue
+
             m = _HOST_LINE.match(satir)
             if not m:
                 continue
             for ad in m.group(1).split():
-                if "*" in ad or "?" in ad or "!" in ad:
+                if _joker_mi(ad):
                     continue
                 if ad not in adlar:
                     adlar.append(ad)

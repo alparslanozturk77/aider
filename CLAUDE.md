@@ -52,7 +52,7 @@ değiştirmek zorunda kalırsan yamayı en küçük blokta tut ve nedenini yorum
 | `aider/models.py` | `send_completion` çok araçlı `tool_choice="auto"` destekliyor |
 | `aider/coders/__init__.py` | `AgentCoder` kaydı |
 | `aider/args.py` | `--agent`, `--plan`, `--auto`, `--permission-mode`, `--max-tool-iterations`, `--offline`, `--auto-skills`, `--continue` |
-| `aider/main.py` | Agent kwarg'ları yalnızca agent coder'a; agent modunda repo map varsayılan kapalı |
+| `aider/main.py` | Agent kwarg'ları yalnızca agent coder'a; repo map agent modunda kapalı; `--offline` zorlaması; coder değişiminde agent kancalarının bırakılması |
 | `aider/io.py` | Mod göstergesi kancaları ve `shift+tab` |
 | `aider/commands.py` | On üç slash komutu; `/voice` çevrimdışı modda kapalı |
 | `.gitignore` | `.env` ve `.mcp.json` ignore |
@@ -235,6 +235,22 @@ kancaları, prompt önekini üreten `build_prompt_prefix()` ve prompt mesajını
 `invalidate()` aynı metni yeniden çiziyor ve değişim ekranda ancak bir
 sonraki prompt'ta görünüyor. `test_prompt_message_is_callable_and_follows_mode`
 bunu koruyor.
+
+## Coder değişiminde bırakılması gerekenler
+
+AgentCoder iki şeyi kendi dışına bağlıyor ve ikisi de coder değişince
+sızıyordu:
+
+- `io.agent_status` / `io.agent_cycle_mode` AgentCoder'ın metotlarına
+  bağlanıyor. `/ask` ile geçilince bağlı kalıyor ve prompt hâlâ
+  "⏵ onay modu" yazıyordu — kullanıcı agent modunda sandığı hâlde değil.
+- MCP sunucu süreçleri yalnızca `atexit` ile kapanıyor, yani her coder
+  değişiminde bir takım daha açılıyordu.
+
+`main.agent_kancalarini_birak()` ikisini de `SwitchCoder` yakalandığında
+bırakıyor; AgentCoder'a dönülürse kancalar kendi `__init__`'inde geri
+kuruluyor. Agent katmanına yeni bir global bağ eklersen bu fonksiyona da
+eklemek gerekiyor.
 
 ## Oturum sürekliliği
 

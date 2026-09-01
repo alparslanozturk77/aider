@@ -448,6 +448,32 @@ def sanity_check_repo(repo, io):
     return False
 
 
+def agent_kancalarini_birak(io, coder):
+    """Coder değişmeden önce agent'a bağlı durumu serbest bırak.
+
+    İki ölçülen sızıntı:
+
+    1. `io.agent_status` ve `io.agent_cycle_mode` AgentCoder'ın metotlarına
+       bağlanıyor. `/ask` ile başka bir coder'a geçildiğinde bağlı kalıyorlar
+       ve prompt hâlâ "⏵ onay modu" yazıyor — kullanıcı agent modunda
+       sandığı hâlde değil. shift+tab de ölü coder'ın modunu döndürüyor.
+    2. MCP sunucu süreçleri eski coder'a bağlı. Yalnızca atexit ile
+       kapandıkları için her coder değişiminde bir takım daha açılıyor.
+
+    Yeni coder AgentCoder ise kancaları kendi __init__'inde geri kuruyor.
+    """
+    io.agent_status = None
+    io.agent_cycle_mode = None
+
+    mcp = getattr(coder, "mcp", None)
+    if mcp is not None:
+        try:
+            mcp.shutdown()
+        except Exception:
+            # Kapatma hatası coder değişimini engellememeli.
+            pass
+
+
 def cevrimdisi_uygula(args):
     """--offline verilmişse ağa çıkan her davranışı kapat.
 
@@ -1206,6 +1232,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             return
         except SwitchCoder as switch:
             coder.ok_to_warm_cache = False
+            agent_kancalarini_birak(io, coder)
 
             # Set the placeholder if provided
             if hasattr(switch, "placeholder") and switch.placeholder is not None:

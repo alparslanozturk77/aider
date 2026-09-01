@@ -21,6 +21,10 @@ istenen budur, izin kurallarında ise fazla geniş kalır.
 Reddetme her zaman izni yener. Kabuk komutlarında `&&`, `||`, `;`, `|` ile
 zincirlenmiş her parça ayrı ayrı değerlendirilir: `git diff && rm -rf /`
 komutu `Bash(git diff:*)` kuralıyla onaylanmaz.
+
+Komut ikamesi (`$(...)`, backtick, `<(...)`) içeren hiçbir komut otomatik
+onaylanmaz — ne bir izin kuralıyla ne de oto modda. İçeriği statik olarak
+değerlendirilemeyen bir komut için "bu güvenli" demenin yolu yok.
 """
 
 import fnmatch
@@ -92,6 +96,9 @@ DEFAULT_ASK = [
     "Bash(sh)",
     "Bash(bash)",
     "Bash(zsh)",
+    # eval komutun gerçek içeriğini dizgenin içine saklıyor; desen eşleşmesi
+    # onu göremiyor. Ölçüldü: eval "rm -rf /" oto modda izin alıyordu.
+    "Bash(eval:*)",
     # --- Tek makineyi değil FİLOYU etkileyenler ---------------------------
     # ansible-playbook'ta --limit yoksa envanterin tamamına dokunur. Oto
     # modda bu, tek bir araç çağrısıyla yüzlerce sunucuyu değiştirmek
@@ -248,6 +255,13 @@ class PermissionSet:
                 return ASK
 
         if self.mode == MODE_AUTO:
+            # Komut ikamesi statik olarak çözülemez, dolayısıyla otomatik
+            # onaylanamaz. ÖLÇÜLDÜ: bu denetim olmadan oto modda
+            # "rm -rf $(echo /)" izin alıyordu — yerleşik reddetme listesi
+            # deseni "rm -rf /*" ile karşılaştırdığı için eşleşme tutmuyor ve
+            # sonundaki koşulsuz ALLOW komutu geçiriyordu.
+            if tool_name in COMMAND_TOOLS and _SUBSTITUTION.search(args.get("command", "")):
+                return ASK
             return ALLOW
 
         return ASK
