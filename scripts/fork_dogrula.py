@@ -553,8 +553,9 @@ def _check_skill_discovery():
 @check(
     "klonlama komutları dalı söylüyor",
     "README.md, AGENT.md",
-    "Deponun varsayılan dalı upstream'i izliyor; dalsız klon fork'un hiçbir "
-    "dosyasını getirmiyor ve bunu fark etmek zaman alıyor.",
+    "Depoda upstream'i izleyen bir main dalı var ve orası fork noktasında; "
+    "oradan klonlanırsa fork'un hiçbir dosyası gelmiyor ve fark etmek zaman "
+    "alıyor. Komut dalı açıkça söylemeli.",
 )
 def _check_clone_branch():
     import re

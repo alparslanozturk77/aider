@@ -134,10 +134,12 @@ aider --agent --map-tokens 1024
 
 ### Depodan kurulum (klon + venv, proxy arkasında)
 
-> **`-b claude-code-layer` şart.** Deponun varsayılan dalı (`main`) upstream
-> aider'ı izliyor ve fork'un hiçbir dosyasını taşımıyor — `kur.sh`, agent
-> katmanı, beceriler, hiçbiri. Dalsız klonlarsan elinde düz aider olur ve
-> bunu fark etmen zaman alır.
+> **Dal neden açıkça yazılıyor?** Deponun varsayılan dalı
+> `claude-code-layer`, yani `-b` olmadan da doğru dal gelir. Ama depoda
+> upstream aider'ı izleyen bir `main` dalı var ve orası fork noktasında
+> duruyor: `kur.sh` yok, agent katmanı yok, beceriler yok. Yanlışlıkla oradan
+> klonlarsan elinde düz aider olur ve bunu fark etmen zaman alır. `-b` bunu
+> imkânsız kılıyor.
 
 `kur.sh` ağa çıkıp `uv` indirir. Kurum ağında bu engelliyse ya da elinde zaten
 bir klon varsa doğrudan depodan kur:

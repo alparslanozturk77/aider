@@ -328,3 +328,12 @@ git reset --hard <hash>
 # gönderme
 git push fork claude-code-layer
 ```
+
+## Dal düzeni
+
+`main` upstream aider'ı izler ve fork'un hiçbir değişikliğini taşımaz;
+birleştirme yordamı bunu varsayar. Fork'un kendi işi `claude-code-layer`
+dalında ve GitHub'daki **varsayılan dal odur** — klonlayan doğrudan
+çalışan sürümü alsın diye.
+
+`main`'i fork işiyle birleştirme: upstream takibi karışır.
