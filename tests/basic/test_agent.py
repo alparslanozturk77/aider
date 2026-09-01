@@ -2132,10 +2132,27 @@ class TestToolResultVisibility(unittest.TestCase):
         self.assertEqual(len(cikti), RESULT_PREVIEW_LINES + 1)
         self.assertIn("satır daha", cikti[-1])
 
-    def test_file_reads_get_a_shorter_preview(self):
-        # Dosya içeriği ekranı doldurmasın; model zaten tamamını görüyor.
-        cikti, _ = self._basilan("Read", "\n".join(str(i) for i in range(40)))
-        self.assertLess(len(cikti), 6)
+    def test_dosya_okumada_yalnizca_ozet_satiri(self):
+        """Read'in ilk satırı zaten "dosya (satır 1-40, toplam 120)" özeti.
+
+        İçeriği ekrana dökmenin bilgi değeri yok: model tamamını görüyor,
+        kullanıcı ekranı doluyor.
+        """
+        icerik = "dosya.py (satır 1-40, toplam 120)\n" + "\n".join(str(i) for i in range(40))
+        cikti, _ = self._basilan("Read", icerik)
+        self.assertEqual(len(cikti), 2)
+        self.assertIn("dosya.py", cikti[0])
+        self.assertIn("40 satır daha", cikti[1])
+
+    def test_beceri_govdesi_ekrana_dokulmez(self):
+        # Skill aracı zaten "Beceri yüklendi: X" yazıyor; gövde ekrana girmesin.
+        cikti, hata = self._basilan("Skill", "# Beceri: ansible\n\nuzun gövde\n" * 20)
+        self.assertEqual(cikti, [])
+        self.assertEqual(hata, [])
+
+    def test_kirpma_toplami_bildirir(self):
+        cikti, _ = self._basilan("Bash", "\n".join(str(i) for i in range(40)))
+        self.assertIn("toplam 40", cikti[-1])
 
     def test_errors_go_to_the_error_channel(self):
         cikti, hata = self._basilan("Ssh", "Hata: host zorunlu")
@@ -2864,3 +2881,163 @@ class TestOtomatikBeceriEnjeksiyonu(unittest.TestCase):
             list(coder.send_message("ansible playbook çalıştır"))
         satirlar = [c.args[0] for c in cikti.call_args_list if c.args]
         self.assertTrue(any("Beceri otomatik yüklendi" in s for s in satirlar), satirlar)
+
+
+class TestOturumKaydi(unittest.TestCase):
+    """Oturumun diske yazılması ve kaldığı yerden sürdürülmesi.
+
+    Upstream'in --restore-chat-history'si bu iş için kullanılamıyor: markdown
+    günlüğün tamamını okuyor ve araç çağrılarını kaybediyor. Agent modunda
+    geçmişin yarısı araç trafiği olduğu için bu, geçmişin yarısını atmak.
+    """
+
+    def setUp(self):
+        from aider.agent.oturum import SessionStore
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.store = SessionStore(self.root)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _tur(self, soru, cevap="tamam"):
+        return [
+            dict(role="user", content=soru),
+            dict(role="assistant", content=cevap),
+        ]
+
+    def test_yazilan_oturum_geri_okunur(self):
+        self.store.baslat("qwen3-coder")
+        self.store.ekle(self._tur("disk doldu mu"))
+        okuma = SessionStoreYeni(self.root)
+        oturum = okuma.son()
+        self.assertIsNotNone(oturum)
+        self.assertEqual(oturum.mesaj_sayisi, 2)
+        self.assertIn("disk doldu mu", oturum.baslik)
+        self.assertEqual(oturum.meta.get("model"), "qwen3-coder")
+
+    def test_arac_cagrilari_korunur(self):
+        """Asıl mesele bu: tool_calls ve role="tool" geri gelmeli."""
+        self.store.baslat()
+        self.store.ekle(
+            [
+                dict(role="user", content="df çalıştır"),
+                dict(
+                    role="assistant",
+                    content="",
+                    tool_calls=[
+                        dict(
+                            id="c1",
+                            type="function",
+                            function=dict(name="Bash", arguments='{"command": "df -h"}'),
+                        )
+                    ],
+                ),
+                dict(role="tool", tool_call_id="c1", name="Bash", content="/dev/sda1 %80"),
+            ]
+        )
+        mesajlar = SessionStoreYeni(self.root).yukle(SessionStoreYeni(self.root).son())
+        roller = [m["role"] for m in mesajlar]
+        self.assertEqual(roller, ["user", "assistant", "tool"])
+        self.assertEqual(mesajlar[1]["tool_calls"][0]["function"]["name"], "Bash")
+        self.assertEqual(mesajlar[2]["tool_call_id"], "c1")
+        self.assertIn("%80", mesajlar[2]["content"])
+
+    def test_bozuk_son_satir_gerisini_bozmaz(self):
+        # Program tur ortasında ölürse son satır yarım kalabilir.
+        self.store.baslat()
+        self.store.ekle(self._tur("ilk soru"))
+        with self.store.path.open("a", encoding="utf-8") as f:
+            f.write('{"role": "assist')
+        oturum = SessionStoreYeni(self.root).son()
+        self.assertEqual(oturum.mesaj_sayisi, 2)
+
+    def test_yazma_hatasi_oturumu_dusurmez(self):
+        self.store.baslat()
+        with patch.object(Path, "open", side_effect=OSError("disk dolu")):
+            self.assertFalse(self.store.ekle(self._tur("soru")))
+        self.assertFalse(self.store.acik)
+
+    def test_eski_oturumlar_budanir(self):
+        from aider.agent.oturum import MAX_OTURUM, SessionStore
+
+        dizin = self.root / ".aider" / "sessions"
+        dizin.mkdir(parents=True)
+        for i in range(MAX_OTURUM + 5):
+            (dizin / f"2026010{i:03d}-000000.jsonl").write_text(
+                '{"tip": "oturum"}\n{"role": "user", "content": "x"}\n'
+            )
+        SessionStore(self.root).baslat()
+        self.assertLessEqual(len(list(dizin.glob("*.jsonl"))), MAX_OTURUM + 1)
+
+
+def SessionStoreYeni(root):
+    """Yazan örnekten bağımsız, yalnızca okuyan bir depo.
+
+    Aynı örnekle okumak yanıltıcı olurdu: oturumlar() şu an yazılan dosyayı
+    listeden çıkarıyor.
+    """
+    from aider.agent.oturum import SessionStore
+
+    return SessionStore(root)
+
+
+class TestOturumButcesi(unittest.TestCase):
+    """Bütçe kırpması araç çağrısı çiftlerini bölmemeli.
+
+    tool_calls taşıyan bir assistant mesajı ile ona ait role="tool"
+    yanıtları ayrılırsa endpoint isteği reddediyor.
+    """
+
+    def _gecmis(self):
+        mesajlar = []
+        for i in range(6):
+            mesajlar += [
+                dict(role="user", content=f"istek {i} " + "x" * 500),
+                dict(
+                    role="assistant",
+                    content="",
+                    tool_calls=[
+                        dict(
+                            id=f"c{i}",
+                            type="function",
+                            function=dict(name="Bash", arguments="{}"),
+                        )
+                    ],
+                ),
+                dict(role="tool", tool_call_id=f"c{i}", name="Bash", content="y" * 500),
+                dict(role="assistant", content=f"özet {i}"),
+            ]
+        return mesajlar
+
+    def test_kirpma_user_mesajindan_baslar(self):
+        from aider.agent.oturum import budala
+
+        for butce in (1_000, 3_000, 6_000, 20_000):
+            kalan = budala(self._gecmis(), butce)
+            if kalan:
+                self.assertEqual(kalan[0]["role"], "user", f"bütçe {butce}")
+
+    def test_yetim_tool_mesaji_kalmaz(self):
+        from aider.agent.oturum import budala
+
+        for butce in (1_000, 2_500, 5_000, 9_000):
+            kalan = budala(self._gecmis(), butce)
+            acik = set()
+            for msg in kalan:
+                for cagri in msg.get("tool_calls") or []:
+                    acik.add(cagri["id"])
+                if msg["role"] == "tool":
+                    self.assertIn(msg["tool_call_id"], acik, f"bütçe {butce}: yetim sonuç")
+
+    def test_bos_gecmis_bos_doner(self):
+        from aider.agent.oturum import budala
+
+        self.assertEqual(budala([], 1000), [])
+
+    def test_bol_butce_her_seyi_tutar(self):
+        from aider.agent.oturum import budala
+
+        gecmis = self._gecmis()
+        self.assertEqual(len(budala(gecmis, 10_000_000)), len(gecmis))

@@ -1323,6 +1323,25 @@ Sonucun kullanıcıya nasıl sunulacağını tarif et.
         self.io.tool_output(f"Beceri oluşturuldu: {skill_md}")
         self.io.tool_output("Düzenledikten sonra /skills ile yeniden yükle.")
 
+    def cmd_oturumlar(self, args):
+        """Bu projedeki önceki agent oturumlarını listeler. Sürdürmek için: aider --continue"""  # noqa
+        coder = self._require_agent()
+        if not coder:
+            return
+
+        oturumlar = coder.oturumlar.oturumlar()
+        if not oturumlar:
+            self.io.tool_output("Bu projede kayıtlı önceki oturum yok.")
+            self.io.tool_output(f"Oturumlar şuraya yazılır: {coder.oturumlar.dizin}")
+            return
+
+        self.io.tool_output(f"{len(oturumlar)} oturum (yeniden eskiye):")
+        for sira, oturum in enumerate(oturumlar, 1):
+            self.io.tool_output(f"  {sira:>2}. {oturum.ozet()}")
+
+        self.io.tool_output()
+        self.io.tool_output("En sonuncusunu sürdürmek için: aider --continue")
+
     def cmd_beceri_uret(self, args):
         """Programın --help ağacından beceri iskeleti üretir: /beceri-uret <program> [--host <sunucu>] [--ad <beceri>]"""  # noqa
         coder = self._require_agent()

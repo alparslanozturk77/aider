@@ -19,6 +19,7 @@ from aider.agent.memory import (
     default_memory_roots,
     load_instructions,
 )
+from aider.agent.oturum import DEVAM_BUTCESI, SessionStore
 from aider.agent.permissions import MODE_ASK, MODE_AUTO, MODE_PLAN, load_permissions
 from aider.agent.registry import ToolContext, ToolRegistry
 from aider.agent.skills import SkillLibrary, SkillTool, default_skill_roots
@@ -42,8 +43,18 @@ from .base_coder import Coder
 DEFAULT_MAX_ITERATIONS = 50
 
 # Araç çıktısından kullanıcıya gösterilecek azami satır. Model zayıf olup
-# sonucu özetlemese bile kullanıcı ham veriyi görsün diye var.
-RESULT_PREVIEW_LINES = 15
+# sonucu özetlemese bile kullanıcı ham veriyi görsün diye var — ama ekranı
+# doldurmadan: modele giden tam çıktı zaten geçmişte duruyor, buradaki
+# yalnızca "ne oldu" hissi.
+RESULT_PREVIEW_LINES = 8
+
+# Kendi çıktısını zaten basan araçlar; iki kez gösterilmesinler.
+KENDI_BASAN_ARACLAR = ("TodoWrite", "ExitPlanMode", "Skill")
+
+# İlk satırı zaten özet olan araçlar. Read'in ilk satırı
+# "dosya.py (satır 1-40, toplam 120)" — dosya içeriğini ekrana dökmenin
+# bilgi değeri yok, model tamamını görüyor.
+OZET_SATIRI_YETER = ("Read",)
 
 # Model araç sonucundan sonra boş dönerse kaç kez dürtülecek. Bir kez
 # yeterli: zayıf modeller çoğu zaman ikinci denemede devam ediyor, daha
@@ -63,6 +74,10 @@ TALIMAT_PAYI = 0.15
 BECERI_PAYI = 0.25
 BECERI_TAVANI = 8_000
 
+# Geri yüklenen önceki oturumun bağlam penceresinden alabileceği pay.
+# Geçmiş, iş yapacak yerin tamamını yiyemez.
+DEVAM_PAYI = 0.30
+
 
 class AgentCoder(Coder):
     """Claude Code tarzı araç döngüsü."""
@@ -75,6 +90,7 @@ class AgentCoder(Coder):
         self.max_iterations = kwargs.pop("max_iterations", DEFAULT_MAX_ITERATIONS)
         self.offline = kwargs.pop("offline", False)
         self.otomatik_beceri = kwargs.pop("auto_skills", True)
+        devam = kwargs.pop("devam", False)
         permission_mode = kwargs.pop("permission_mode", None) or (
             MODE_PLAN if self.plan_mode else MODE_ASK
         )
@@ -133,7 +149,41 @@ class AgentCoder(Coder):
             )
             self.ctx.permissions = load_permissions(self.root, mode=MODE_ASK)
 
+        self.oturumlar = SessionStore(self.root, self.io)
+        self.devam_edilen = self._devam_et(devam)
+        self.oturumlar.baslat(getattr(self.main_model, "name", ""))
+
         self._install_status_bar()
+
+    def _devam_et(self, devam):
+        """--continue verilmişse son oturumu geçmişe yükle.
+
+        Mesajlar API'ye gönderildiği biçimde saklandığı için araç çağrıları
+        ve sonuçları da geri geliyor; upstream'in markdown tabanlı geri
+        yüklemesi bunları kaybediyordu.
+        """
+        if not devam:
+            return None
+
+        son = self.oturumlar.son()
+        if not son:
+            self.io.tool_warning("Devam edilecek önceki oturum bulunamadı.")
+            return None
+
+        butce = self._prompt_butcesi(DEVAM_PAYI, DEVAM_BUTCESI)
+        mesajlar = self.oturumlar.yukle(son, butce)
+        if not mesajlar:
+            self.io.tool_warning(f"{son.path} boş ya da okunamadı.")
+            return None
+
+        self.done_messages = mesajlar
+        dusen = son.mesaj_sayisi - len(mesajlar)
+        self._devam_ozeti = (
+            f"Önceki oturum sürdürülüyor: {son.baslik} ({len(mesajlar)} mesaj"
+            + (f", {dusen} tanesi bütçeye sığmadı" if dusen > 0 else "")
+            + ")"
+        )
+        return son
 
     def _prompt_butcesi(self, pay, tavan):
         """Sistem promptundaki bir bloğun karakter bütçesi.
@@ -259,6 +309,8 @@ class AgentCoder(Coder):
             if dusen:
                 satir += f" ({dusen} tanesi bütçe nedeniyle yüklenmedi)"
             lines.append(satir)
+        if self.devam_edilen:
+            lines.append(self._devam_ozeti)
         if self.offline:
             lines.append("Çevrimdışı mod: sürüm denetimi, analitik ve URL çekme kapalı")
         if self.plan_mode:
@@ -423,6 +475,7 @@ class AgentCoder(Coder):
         self.show_usage_report()
 
         self.cur_messages += turn_messages
+        self.oturumlar.ekle([dict(role="user", content=inp)] + turn_messages)
         self._finish_turn()
 
         # Coder.run_one bu metodu list() ile tüketiyor, yani üreteç olmak zorunda.
@@ -617,20 +670,18 @@ class AgentCoder(Coder):
             self.io.tool_error(f"    {result.splitlines()[0]}")
             return
 
-        # Zaten kendi çıktısını basan araçlar iki kez gösterilmesin.
-        if name in ("TodoWrite", "ExitPlanMode"):
+        if name in KENDI_BASAN_ARACLAR:
             return
 
-        # Beceri gövdeleri ve dosya içerikleri uzun; ekranı doldurmasınlar.
-        limit = 3 if name in ("Read", "Skill") else RESULT_PREVIEW_LINES
-
         satirlar = result.splitlines()
+        limit = 1 if name in OZET_SATIRI_YETER else RESULT_PREVIEW_LINES
+
         for satir in satirlar[:limit]:
             self.io.tool_output(f"    {satir}")
 
         kalan = len(satirlar) - limit
         if kalan > 0:
-            self.io.tool_output(f"    ... {kalan} satır daha")
+            self.io.tool_output(f"    ... {kalan} satır daha (toplam {len(satirlar)})")
 
     def _show_tool_call(self, name, args):
         """Araç çağrısını kullanıcıya tek satırda özetle."""
@@ -652,7 +703,20 @@ class AgentCoder(Coder):
         detail = detail.replace("\n", " ")
         if len(detail) > 90:
             detail = detail[:90] + "..."
-        self.io.tool_output(f"  → {name}({detail})")
+        self.io.tool_output(f"  {self._ok()} {name}({detail})")
+
+    def _ok(self):
+        """Araç çağrısı imi; terminal taşımıyorsa ASCII'ye düş.
+
+        Mod göstergesindeki glyph'lerle aynı sorun: kurum sunucularında
+        kodlama her zaman UTF-8 değil ve tek bir karakter satırı bozuyor.
+        """
+        enc = getattr(sys.stdout, "encoding", None) or "utf-8"
+        try:
+            "→".encode(enc)
+        except (UnicodeEncodeError, LookupError):
+            return "->"
+        return "→"
 
     def _finish_turn(self):
         """Tur sonunda aider'ın git/lint/test makinesini devreye sok."""

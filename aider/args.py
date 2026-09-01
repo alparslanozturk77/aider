@@ -183,6 +183,15 @@ def get_parser(default_config_files, git_root):
         help="Use the agentic tool-calling mode (Claude Code style) for the main chat",
     )
     group.add_argument(
+        "--continue",
+        # dest açıkça veriliyor: "continue" Python anahtar sözcüğü, args.continue
+        # yazılamaz.
+        dest="devam",
+        action="store_true",
+        default=False,
+        help="Resume the most recent agent session in this project, tool calls included",
+    )
+    group.add_argument(
         "--auto-skills",
         action=argparse.BooleanOptionalAction,
         default=True,
