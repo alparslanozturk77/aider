@@ -109,12 +109,20 @@ Ağa çıkan her davranışı tek noktadan kapatır:
 | URL çekme | Sohbetteki adresleri indirmeyi öneriyor |
 | `/voice` | `aider/voice.py` `api_base`'i iletmiyor; ses kaydı `api.openai.com`'a giderdi |
 | `npx`/`uvx` ile başlayan MCP sunucuları | Paketi ağdan indirirler; çevrimdışında sessizce takılıyorlar |
+| litellm fiyat listesi | `import litellm` GitHub'dan `model_prices_and_context_window.json` çekiyor |
+| aider'ın kendi model bilgisi getiricisi | Aynı listeyi indiriyor ve **başarısızlıkta her sorguda yeniden deniyor**, her deneme 5 saniye |
 
 Kalıcı yapmak için `~/.aider.conf.yml` dosyasına:
 
 ```yaml
 offline: true
 ```
+
+Son iki satır ölçüldü: hava boşluklu bir sunucuda açılış
+`Failed to fetch remote model_prices_and_context_window.json` ve ardı ardına
+`ConnectionResetError(104)` satırlarıyla doluyordu. Sebep, başarısız bir
+indirmenin önbelleği boş bırakması ve her model bilgisi sorgusunun yeniden
+denemesiydi.
 
 MCP sunucusu kullanacaksan paketi önceden kur ve `command` alanına doğrudan
 çalıştırılabilir yolu yaz (`npx` değil).

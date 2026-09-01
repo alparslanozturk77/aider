@@ -49,7 +49,7 @@ değiştirmek zorunda kalırsan yamayı en küçük blokta tut ve nedenini yorum
 
 | Dosya | Ne yapıldı |
 |---|---|
-| `aider/models.py` | `send_completion` çok araçlı `tool_choice="auto"` destekliyor |
+| `aider/models.py` | `send_completion` çok araçlı `tool_choice="auto"` destekliyor; `ModelInfoManager.set_offline()` |
 | `aider/coders/__init__.py` | `AgentCoder` kaydı |
 | `aider/args.py` | `--agent`, `--plan`, `--auto`, `--permission-mode`, `--max-tool-iterations`, `--offline`, `--auto-skills`, `--continue` |
 | `aider/main.py` | Agent kwarg'ları yalnızca agent coder'a; repo map agent modunda kapalı; `--offline` zorlaması; coder değişiminde agent kancalarının bırakılması |

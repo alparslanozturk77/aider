@@ -2513,6 +2513,53 @@ class TestCevrimdisiMod(unittest.TestCase):
         self.assertFalse(args.analytics)
         self.assertFalse(args.detect_urls)
 
+    def test_offline_litellm_fiyat_listesini_indirtmez(self):
+        """litellm import edilirken model fiyat listesini GitHub'dan çekiyor.
+
+        Ölçüldü (hava boşluklu srvsatellite): açılışta
+        "Failed to fetch remote model_prices_and_context_window.json" ve
+        ardı ardına ConnectionResetError satırları.
+        """
+        import os
+
+        from aider.args import get_parser
+        from aider.main import cevrimdisi_uygula
+
+        onceki = os.environ.pop("LITELLM_LOCAL_MODEL_COST_MAP", None)
+        try:
+            cevrimdisi_uygula(get_parser([], None).parse_args(["--offline"]))
+            self.assertEqual(os.environ.get("LITELLM_LOCAL_MODEL_COST_MAP"), "True")
+        finally:
+            if onceki is None:
+                os.environ.pop("LITELLM_LOCAL_MODEL_COST_MAP", None)
+            else:
+                os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = onceki
+
+    def test_offline_model_bilgisi_agdan_cekilmez(self):
+        """Asıl maliyet burada.
+
+        _update_cache başarısız olunca content None kalıyor ve
+        get_model_from_cached_json_db content boşsa HER çağrıda yeniden
+        deniyor; her deneme 5 saniyelik bir ağ zaman aşımı.
+        """
+        from aider import models
+        from aider.args import get_parser
+        from aider.main import cevrimdisi_uygula
+
+        yonetici = models.model_info_manager
+        onceki = yonetici.offline
+        try:
+            cevrimdisi_uygula(get_parser([], None).parse_args(["--offline"]))
+            self.assertTrue(yonetici.offline)
+            with patch("requests.get") as sahte:
+                yonetici.content = None
+                yonetici._cache_loaded = True
+                for _ in range(3):
+                    yonetici.get_model_from_cached_json_db("kurum/qwen3-coder")
+            sahte.assert_not_called()
+        finally:
+            yonetici.offline = onceki
+
     def test_offline_verilmezse_hicbir_sey_degismez(self):
         from aider.args import get_parser
         from aider.main import cevrimdisi_uygula

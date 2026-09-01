@@ -172,6 +172,8 @@ class ModelInfoManager:
         self.local_model_metadata = {}
         self.verify_ssl = True
         self._cache_loaded = False
+        # Fork eklentisi: hava boşluklu sunucuda ağa hiç çıkmamak için.
+        self.offline = False
 
         # Manager for the cached OpenRouter model database
         self.openrouter_manager = OpenRouterModelManager()
@@ -180,6 +182,17 @@ class ModelInfoManager:
         self.verify_ssl = verify_ssl
         if hasattr(self, "openrouter_manager"):
             self.openrouter_manager.set_verify_ssl(verify_ssl)
+
+    def set_offline(self, offline=True):
+        """Fork eklentisi: --offline verildiğinde model fiyat listesini indirme.
+
+        Ölçüldü (srvsatellite, hava boşluklu): _update_cache başarısız olunca
+        self.content None kalıyor, get_model_from_cached_json_db ise content
+        boşsa her çağrıda yeniden _update_cache çağırıyor. Yani model bilgisi
+        sorgulanan HER yerde 5 saniyelik bir ağ denemesi daha yapılıyor ve
+        ekran "Connection reset by peer" satırlarıyla doluyor.
+        """
+        self.offline = offline
 
     def _load_cache(self):
         if self._cache_loaded:
@@ -201,6 +214,11 @@ class ModelInfoManager:
         self._cache_loaded = True
 
     def _update_cache(self):
+        if self.offline:
+            # Boş sözlük: ağ denemesi yok ama çağıranlar yine bir şey bulur.
+            self.content = self.content or {}
+            return
+
         try:
             import requests
 

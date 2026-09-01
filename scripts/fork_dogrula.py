@@ -626,7 +626,10 @@ def main():
 
     if not failures:
         print("\nTüm değişmezler yerinde. Şimdi testleri çalıştır:")
-        print("  .venv/bin/python -m pytest tests/basic -q")
+        # sys.executable: sanal ortamın adı .venv olmak zorunda değil ve
+        # betik depo kökünden çalıştırılmayabilir. Ölçüldü: sunucuda ortam
+        # "venv" adındaydı ve önerilen komut çalışmıyordu.
+        print(f"  {sys.executable} -m pytest {REPO / 'tests' / 'basic'} -q")
         return 0
 
     print(f"\n{len(failures)} değişmez bozulmuş:\n")

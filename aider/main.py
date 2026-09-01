@@ -490,6 +490,19 @@ def cevrimdisi_uygula(args):
     args.just_check_update = False
     args.analytics = False
     args.detect_urls = False
+
+    # litellm, import edilirken model fiyat listesini GitHub'dan çekiyor.
+    # Bu değişken onu paketle gelen kopyayı kullanmaya zorluyor. SIRA ÖNEMLİ:
+    # litellm tembel yükleniyor ve bu fonksiyon parse_args'ın hemen ardından
+    # çalışıyor, yani ilk erişimden önce ayarlanmış oluyor.
+    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+
+    # Aider'ın kendi getiricisi de aynı listeyi indiriyor ve başarısızlıkta
+    # her sorguda yeniden deniyor; ölçüldü, her deneme 5 saniye.
+    from aider import models as _models
+
+    _models.model_info_manager.set_offline(True)
+
     return args
 
 
