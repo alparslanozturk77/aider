@@ -134,13 +134,18 @@ aider --agent --map-tokens 1024
 
 ### Depodan kurulum (klon + venv, proxy arkasında)
 
+> **`-b claude-code-layer` şart.** Deponun varsayılan dalı (`main`) upstream
+> aider'ı izliyor ve fork'un hiçbir dosyasını taşımıyor — `kur.sh`, agent
+> katmanı, beceriler, hiçbiri. Dalsız klonlarsan elinde düz aider olur ve
+> bunu fark etmen zaman alır.
+
 `kur.sh` ağa çıkıp `uv` indirir. Kurum ağında bu engelliyse ya da elinde zaten
 bir klon varsa doğrudan depodan kur:
 
 ```bash
 # RHEL 9: sistem Python'ı 3.9, aider >=3.10 istiyor
 dnf install -y python3.11 git
-git clone https://github.com/alparslanozturk77/aider.git /opt/aider
+git clone -b claude-code-layer https://github.com/alparslanozturk77/aider.git /opt/aider
 cd /opt/aider
 python3.11 -m venv .venv
 .venv/bin/python -m pip install -e .
@@ -233,7 +238,7 @@ curl -fsSL https://raw.githubusercontent.com/alparslanozturk77/aider/claude-code
 
 ```bash
 sudo dnf install -y git python3.12 python3.12-pip
-git clone https://github.com/alparslanozturk77/aider.git && cd aider
+git clone -b claude-code-layer https://github.com/alparslanozturk77/aider.git && cd aider
 python3.12 -m venv .venv && .venv/bin/pip install -e .
 ```
 
@@ -261,7 +266,7 @@ pip install --no-index --find-links wheels -e .
 ### Elle kurulum (geliştirme için)
 
 ```bash
-git clone https://github.com/alparslanozturk77/aider.git && cd aider
+git clone -b claude-code-layer https://github.com/alparslanozturk77/aider.git && cd aider
 python3.12 -m venv .venv && .venv/bin/pip install -e .
 cp ornek/env .env
 cp ornek/aider.conf.yml .aider.conf.yml

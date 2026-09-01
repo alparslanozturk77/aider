@@ -41,9 +41,12 @@ işi bitirene kadar sürdürür.
 **Ağa çıkabilen makine:**
 
 ```bash
-git clone https://github.com/alparslanozturk77/aider.git
+git clone -b claude-code-layer https://github.com/alparslanozturk77/aider.git
 cd aider && ./kur.sh
 ```
+
+> `-b claude-code-layer` şart. Deponun varsayılan dalı upstream aider'ı izliyor;
+> onu klonlarsan fork'un hiçbir dosyası (`kur.sh` dahil) gelmez.
 
 **Çevrimdışı sunucu (RHEL 9 / 10)** — bağımlılıklar paketin içinde wheel
 olarak gelir, kurulum ağ istemez. [Sürüm sayfasından](https://github.com/alparslanozturk77/aider/releases)

@@ -551,6 +551,33 @@ def _check_skill_discovery():
 
 
 @check(
+    "klonlama komutları dalı söylüyor",
+    "README.md, AGENT.md",
+    "Deponun varsayılan dalı upstream'i izliyor; dalsız klon fork'un hiçbir "
+    "dosyasını getirmiyor ve bunu fark etmek zaman alıyor.",
+)
+def _check_clone_branch():
+    import re
+
+    FORK_DAL = "claude-code-layer"
+    desen = re.compile(r"git clone[^\n]*github\.com/alparslanozturk77/aider")
+
+    kirik = []
+    for ad in ("README.md", "AGENT.md"):
+        yol = REPO / ad
+        if not yol.is_file():
+            continue
+        for satir in yol.read_text(encoding="utf-8").splitlines():
+            if desen.search(satir) and f"-b {FORK_DAL}" not in satir:
+                kirik.append(f"{ad}: {satir.strip()}")
+
+    if kirik:
+        raise Fail(
+            "dal belirtmeyen klonlama komutu: " + "; ".join(kirik)
+        )
+
+
+@check(
     "README fork'un",
     "README.md",
     "Depo ön yüzü fork'u anlatmalı. Merge upstream README'sini geri getirirse "
