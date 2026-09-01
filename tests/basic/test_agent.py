@@ -3570,3 +3570,91 @@ class TestCoderDegisiminde(unittest.TestCase):
         coder.mcp.shutdown.side_effect = OSError("süreç yok")
         agent_kancalarini_birak(io, coder)
         self.assertIsNone(io.agent_status)
+
+
+class TestFrontmatterAyristirma(unittest.TestCase):
+    """İki sessiz kayıp: satır devamı ve tırnak kırpma.
+
+    İkisi de tetikleyici kelimeleri yiyordu, yani beceri yükleniyor ama
+    doğru istekte tetiklenmiyordu — teşhisi zor bir arıza.
+    """
+
+    def test_girintili_satir_degerin_devamidir(self):
+        meta, _govde = _parse_frontmatter(
+            '---\nname: pip\ndescription: NE ZAMAN? "pip"\n'
+            '  ve "paket" isteklerinde tetiklenir.\n---\n\ngövde\n'
+        )
+        self.assertIn("paket", meta["description"])
+        self.assertIn("tetiklenir", meta["description"])
+
+    def test_devam_satirindaki_tetikleyici_kaybolmaz(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "paket"
+            d.mkdir()
+            (d / "SKILL.md").write_text(
+                '---\nname: paket\ndescription: Paket işleri. "dnf"\n'
+                '  ve "rpm" isteklerinde tetiklenir.\n---\n\nGÖVDE\n',
+                encoding="utf-8",
+            )
+            lib = SkillLibrary([Path(tmp)])
+            self.assertTrue(lib.eslestir("rpm paketini kur"))
+
+    def test_sondaki_tirnakli_tetikleyici_bozulmaz(self):
+        # Değerin iki ucundan ayrım gözetmeden tırnak kırpmak, tırnaklı bir
+        # ifadeyle biten açıklamanın son tetikleyicisini yiyordu.
+        meta, _ = _parse_frontmatter(
+            '---\nname: x\ndescription: Şunlarda: "ansible", "playbook"\n---\n\ngövde\n'
+        )
+        self.assertTrue(meta["description"].endswith('"playbook"'), meta["description"])
+
+    def test_tamami_tirnakli_deger_soyulur(self):
+        meta, _ = _parse_frontmatter('---\nname: "tirnakli"\n---\n\ngövde\n')
+        self.assertEqual(meta["name"], "tirnakli")
+
+    def test_yorum_satirlari_atlanir(self):
+        meta, _ = _parse_frontmatter(
+            "---\n# bu bir yorum\nname: x\ndescription: y\n---\n\ngövde\n"
+        )
+        self.assertEqual(meta["name"], "x")
+        self.assertNotIn("#", meta)
+
+    def test_depodaki_37_beceri_hala_okunuyor(self):
+        from aider.agent.skills import YERLESIK_BECERILER
+
+        lib = SkillLibrary([YERLESIK_BECERILER])
+        self.assertEqual(len(lib.skills), 37)
+
+
+class TestMCPHataAyrintisi(unittest.TestCase):
+    """Sunucu başlatılamadığında SEBEBİ görünmeli.
+
+    stderr DEVNULL'a gidiyordu; kullanıcı yalnızca "başlatılamadı" görüyor
+    ve çevrimdışı bir sunucuda bunu teşhis etmek çok zor.
+    """
+
+    def test_sunucu_hata_ciktisi_mesaja_giriyor(self):
+        from aider.agent.mcp import MCPError, MCPServer
+
+        server = MCPServer(
+            name="bozuk",
+            command=sys.executable,
+            args=["-c", "import sys; sys.stderr.write('ModuleNotFoundError: yok\\n')"],
+        )
+        try:
+            with self.assertRaises(MCPError) as cm:
+                server.start()
+            self.assertIn("sunucu çıktısı", str(cm.exception))
+            self.assertIn("ModuleNotFoundError", str(cm.exception))
+        finally:
+            server.stop()
+
+    def test_stderr_dosyasi_kapatiliyor(self):
+        from aider.agent.mcp import MCPServer
+
+        server = MCPServer(name="x", command=sys.executable, args=["-c", "pass"])
+        try:
+            server.start()
+        except Exception:
+            pass
+        server.stop()
+        self.assertIsNone(server._stderr_dosyasi)

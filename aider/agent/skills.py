@@ -67,24 +67,53 @@ def _tetikleyici_regex(ifade):
     return re.compile(r"(?<![a-z0-9])" + re.escape(ifade))
 
 
+def _tirnaklari_soy(val):
+    """Yalnızca değerin TAMAMI tırnak içindeyse tırnakları kaldır.
+
+    İki uçtan ayrım gözetmeden kırpmak, tırnaklı bir tetikleyiciyle biten
+    açıklamanın son tetikleyicisini bozuyordu:
+    `... "pip", "paket"` -> `... "pip", "paket` ve o tetikleyici artık
+    eşleşmiyor.
+    """
+    if len(val) >= 2 and val[0] == val[-1] and val[0] in "'\"":
+        return val[1:-1]
+    return val
+
+
 def _parse_frontmatter(text):
     """Minimal YAML frontmatter ayrıştırıcı (name/description düzeyinde).
 
     PyYAML'a bağımlılık eklememek için kasıtlı olarak basit tutuldu; beceri
-    frontmatter'ı yalnızca düz `anahtar: değer` çiftleri içerir.
+    frontmatter'ı düz `anahtar: değer` çiftlerinden oluşur.
+
+    Girintili satırlar önceki değerin devamı sayılır (YAML katlanmış dizge).
+    Bu şart: uzun bir `description` iki satıra yayıldığında ikinci satır
+    sessizce düşüyordu ve o satırdaki tetikleyici kelimeler kayboluyordu —
+    `/beceri-uret`'in ürettiği iskeletin açıklaması tam olarak böyle.
+
+    Sınır: iç içe eşleme (nested mapping) desteklenmiyor; girintili bir
+    `anahtar: değer` satırı üstteki değerin devamı olarak katlanır.
     """
     m = _FRONTMATTER.match(text)
     if not m:
         return {}, text
 
     meta = {}
+    son_anahtar = None
     for line in m.group(1).splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or ":" not in line:
+        if not line.strip() or line.strip().startswith("#"):
             continue
+
+        if son_anahtar and line[:1].isspace():
+            meta[son_anahtar] = (meta[son_anahtar] + " " + line.strip()).strip()
+            continue
+
+        if ":" not in line:
+            continue
+
         key, _, val = line.partition(":")
-        val = val.strip().strip("'\"")
-        meta[key.strip()] = val
+        son_anahtar = key.strip()
+        meta[son_anahtar] = _tirnaklari_soy(val.strip())
     return meta, m.group(2)
 
 

@@ -26,6 +26,7 @@ import json
 import os
 import queue
 import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -69,6 +70,12 @@ class MCPServer:
         # ancak bu şekilde gerçekten uygulanabiliyor.
         self._inbox = queue.Queue()
         self._reader = None
+        # Sunucunun stderr'i geçici bir dosyaya yazılıyor. DEVNULL'a
+        # gönderildiğinde başlatma hatasının SEBEBİ kayboluyor ve kullanıcı
+        # yalnızca "başlatılamadı" görüyor; çevrimdışı bir sunucuda bunu
+        # teşhis etmek çok zor. Boru yerine dosya: kimse okumazsa boru
+        # dolduğunda sunucu bloke oluyor.
+        self._stderr_dosyasi = None
 
     # -- süreç yaşam döngüsü -------------------------------------------------
 
@@ -78,11 +85,18 @@ class MCPServer:
         full_env.update(self.env)
 
         try:
+            self._stderr_dosyasi = tempfile.TemporaryFile(
+                mode="w+", encoding="utf-8", errors="replace"
+            )
+        except OSError:
+            self._stderr_dosyasi = None
+
+        try:
             self.proc = subprocess.Popen(
                 [self.command] + self.args,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
+                stderr=self._stderr_dosyasi or subprocess.DEVNULL,
                 env=full_env,
                 cwd=self.cwd,
                 text=True,
@@ -94,20 +108,38 @@ class MCPServer:
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
         self._reader.start()
 
-        self._request(
-            "initialize",
-            {
-                "protocolVersion": PROTOCOL_VERSION,
-                "capabilities": {},
-                "clientInfo": {"name": "aider-agent", "version": "1"},
-            },
-            timeout=STARTUP_TIMEOUT,
-        )
-        self._notify("notifications/initialized")
+        try:
+            self._request(
+                "initialize",
+                {
+                    "protocolVersion": PROTOCOL_VERSION,
+                    "capabilities": {},
+                    "clientInfo": {"name": "aider-agent", "version": "1"},
+                },
+                timeout=STARTUP_TIMEOUT,
+            )
+            self._notify("notifications/initialized")
 
-        result = self._request("tools/list", {}, timeout=STARTUP_TIMEOUT)
+            result = self._request("tools/list", {}, timeout=STARTUP_TIMEOUT)
+        except MCPError as err:
+            # Sebebi sunucunun kendi hata çıktısında; onsuz teşhis edilemiyor.
+            raise MCPError(str(err) + self._stderr_ipucu())
+
         self.tools = result.get("tools", []) or []
         return self.tools
+
+    def _stderr_ipucu(self, satir=8):
+        """Sunucunun son hata satırları; hata mesajına eklenir."""
+        if not self._stderr_dosyasi:
+            return ""
+        try:
+            self._stderr_dosyasi.seek(0)
+            satirlar = self._stderr_dosyasi.read().strip().splitlines()
+        except (OSError, ValueError):
+            return ""
+        if not satirlar:
+            return ""
+        return "\n    sunucu çıktısı: " + " | ".join(s.strip() for s in satirlar[-satir:])
 
     def stop(self):
         if not self.proc:
@@ -124,6 +156,12 @@ class MCPServer:
             pass
         finally:
             self.proc = None
+            if self._stderr_dosyasi:
+                try:
+                    self._stderr_dosyasi.close()
+                except OSError:
+                    pass
+                self._stderr_dosyasi = None
 
     def is_alive(self):
         return self.proc is not None and self.proc.poll() is None
