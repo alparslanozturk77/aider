@@ -43,17 +43,23 @@ aider --agent
 /model-ekle
 ```
 
-`/model-ekle` endpoint tipini, model kimliğini, adresi, anahtarı ve bağlam
-penceresini sorar; ev dizinindeki üç yapılandırma dosyasını yazar
-(`~/.aider.conf.yml` 0600 izniyle, çünkü anahtar taşıyor). Tanım tüm
-projelerde geçerli olur.
+`/model-ekle` sırayla şunları yapar:
 
-Model kimliğini bilmiyorsan:
+1. Endpoint tipini ve adresini sorar (adres modelden **önce**, çünkü model
+   listesi oradan çekilir)
+2. `GET <adres>/models` ile sunulan modelleri listeler; **numarayla seçersin**
+3. Bağlam penceresini yanıttan okur (`max_model_len` / `context_length`) ve
+   varsayılan olarak sunar
+4. Küçük bir istekle **fonksiyon çağırma desteğini dener** ve sonucu söyler
+5. Ev dizinindeki üç yapılandırma dosyasını yazar (`~/.aider.conf.yml` 0600
+   izniyle, çünkü anahtar taşıyor)
 
-```bash
-curl -s "$OPENAI_API_BASE/models" \
-  -H "Authorization: Bearer $OPENAI_API_KEY" | jq -r '.data[].id'
-```
+Dördüncü adım önemli: agent modu fonksiyon çağırmaya bağlı. Desteklemeyen bir
+model sessizce tanımlanırsa belirtisi "model hiç araç çağırmıyor" oluyor ve
+sebebi görünmüyor.
+
+Liste alınamazsa (endpoint kapalı, ağ yok) akış model kimliğini elle sormaya
+düşer; hiçbir adım kurulumu düşürmez.
 
 ### Oturumlar ve kaldığı yerden devam
 
