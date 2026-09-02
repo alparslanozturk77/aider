@@ -76,6 +76,15 @@ TALIMAT_PAYI = 0.15
 BECERI_PAYI = 0.25
 BECERI_TAVANI = 8_000
 
+# Bu pencerenin altında lüks araçların şeması sunulmuyor. Şemalar her
+# istekte gidiyor ve ölçüldü: on aracın şeması 2.246 token, 16k pencerenin
+# %14'ü. Aşağıdaki üçü 766 token (%4,7) ve 4B sınıfı bir modelin neredeyse
+# hiç çağırmadığı araçlar — Skill'i hiç çağırmadığı zaten ölçülmüştü.
+# Yetenek kaybolmuyor: beceri tetikleme kodda deterministik yapılıyor,
+# /hatirla kullanıcıda duruyor.
+KUCUK_PENCERE = 32_000
+KUCUK_PENCEREDE_KAPALI = ("Skill", "Hatirla", "TodoWrite")
+
 # Beceri katalogunun (37 satırlık ad + açıklama listesi) alabileceği pay.
 # Ölçüldü: tam katalog 9.838 karakter, 16k pencerede her istekte ~3.650
 # token. Karşılığı yok — beceri seçimi kodda yapılıyor, model bu listeden
@@ -310,6 +319,11 @@ class AgentCoder(Coder):
         n = len(self.ctx.skills.skills)
         builtin = [x for x in self.registry.names() if not x.startswith("mcp__")]
         lines.append(f"Araçlar: {', '.join(builtin)}")
+        if self._kucuk_pencere():
+            lines.append(
+                f"Dar pencere ({(self.main_model.info or {}).get('max_input_tokens')} token):"
+                f" {', '.join(KUCUK_PENCEREDE_KAPALI)} şemaları sunulmuyor"
+            )
         mcp_line = self.mcp.summary()
         if mcp_line:
             lines.append(mcp_line)
@@ -368,14 +382,25 @@ class AgentCoder(Coder):
 
         return out
 
+    def _kucuk_pencere(self):
+        """Model penceresi lüks araçların şemasını taşıyamayacak kadar dar mı?"""
+        try:
+            pencere = (self.main_model.info or {}).get("max_input_tokens")
+        except Exception:
+            return False
+        return bool(pencere) and pencere < KUCUK_PENCERE
+
     def available_tools(self):
-        """Plan modunda yan etkili araçları listeden çıkar."""
+        """Plan modunda yan etkili araçları, dar pencerede lüks araçları çıkar."""
+        dar = self._kucuk_pencere()
         names = []
         for name in self.registry.names():
             tool = self.registry.get(name)
             if name == "ExitPlanMode" and not self.ctx.plan_mode:
                 continue
             if self.ctx.plan_mode and tool.mutating:
+                continue
+            if dar and name in KUCUK_PENCEREDE_KAPALI:
                 continue
             names.append(name)
         return names

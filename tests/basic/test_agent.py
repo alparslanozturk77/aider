@@ -1228,9 +1228,14 @@ from aider.agent.model_setup import ModelSetupCancelled, run_setup  # noqa: E402
 
 
 class TestModelSetup(unittest.TestCase):
-    """Cevap sırası: endpoint tipi, adres, anahtar, model, pencere, çıktı.
+    """Cevap sırası: adres, anahtar, model, pencere, çıktı.
 
-    Model listesi endpoint'ten çekildiği için adres modelden ÖNCE soruluyor.
+    "Endpoint tipi" sorusu kaldırıldı: üç seçenek de aynı litellm
+    sağlayıcısını kullanıyordu, soru yalnızca varsayılan adresi seçiyordu.
+
+    Anahtar ancak model listesi anahtarsız alınamazsa soruluyor. Testlerde
+    _istek yamalı olduğu için liste hiç gelmiyor, yani anahtar her zaman
+    soruluyor.
     """
 
     def setUp(self):
@@ -1254,82 +1259,136 @@ class TestModelSetup(unittest.TestCase):
         return yaml.safe_load((self.home / ".aider.conf.yml").read_text(encoding="utf-8"))
 
     def _meta(self):
-        return json.loads((self.home / ".aider.model.metadata.json").read_text(encoding="utf-8"))
+        yol = self.home / ".aider" / "model.metadata.json"
+        return json.loads(yol.read_text(encoding="utf-8"))
 
     def _settings(self):
-        return yaml.safe_load((self.home / ".aider.model.settings.yml").read_text(encoding="utf-8"))
+        yol = self.home / ".aider" / "model.settings.yml"
+        return yaml.safe_load(yol.read_text(encoding="utf-8"))
 
     def test_corporate_endpoint_writes_all_three_files(self):
-        name, written = self._run(["1", "https://llm.kurum/v1", "anahtar", "qwen3-coder", "", ""])
+        name, written = self._run(["https://llm.kurum/v1", "anahtar", "qwen3-coder", "", ""])
         self.assertEqual(name, "openai/qwen3-coder")
         self.assertEqual(len(written), 3)
         for path in written:
             self.assertTrue(Path(path).is_file())
 
     def test_prefix_is_added_once(self):
-        name, _ = self._run(["1", "https://x/v1", "k", "qwen3-coder", "", ""])
+        name, _ = self._run(["https://x/v1", "k", "qwen3-coder", "", ""])
         self.assertEqual(name, "openai/qwen3-coder")
 
     def test_user_supplied_prefix_is_not_doubled(self):
-        name, _ = self._run(["1", "https://x/v1", "k", "openai/qwen3-coder", "", ""])
+        name, _ = self._run(["https://x/v1", "k", "openai/qwen3-coder", "", ""])
         self.assertEqual(name, "openai/qwen3-coder")
 
     def test_ollama_uses_openai_provider_not_ollama_chat(self):
         # litellm'in 'ollama_chat/' sağlayıcısı araç sonucu mesajlarını modele
         # ulaştırmıyor; model sonucu görmediği için sonsuz döngüye giriyor.
         # Ollama'nın OpenAI uyumlu /v1 ucu doğru çalıştığı için o kullanılıyor.
-        name, _ = self._run(["2", "http://localhost:11434/v1", "", "qwen3-coder:30b", "", ""])
+        name, _ = self._run(["http://localhost:11434/v1", "", "qwen3-coder:30b", "", ""])
         self.assertTrue(name.startswith("openai/"), name)
         self.assertNotIn("ollama_chat", name)
 
-    def test_ollama_default_base_points_at_v1(self):
-        # /v1 olmadan OpenAI uyumlu uc calismaz.
-        self._run(["2", "", "", "m", "", ""])
-        self.assertTrue(self._conf()["openai-api-base"].endswith("/v1"))
+    def test_yazilan_adres_v1_ile_biter(self):
+        # /v1 olmadan OpenAI uyumlu uç çalışmaz.
+        self._run(["sunucu:8000", "", "m", "", ""])
+        self.assertEqual(self._conf()["openai-api-base"], "http://sunucu:8000/v1")
 
-    def test_edit_format_defaults_to_agent(self):
-        self._run(["1", "https://x/v1", "k", "m", "", ""])
-        self.assertEqual(self._conf()["edit-format"], "agent")
-        self.assertEqual(self._settings()[0]["edit_format"], "agent")
+    def test_bos_adres_reddedilir(self):
+        # Eskiden boş adres endpoint tipinin varsayılanına düşüyordu. Adressiz
+        # yapılandırma sessizce api.openai.com'a gidiyor; hava boşluklu ortamda
+        # bu sessiz bir sızıntı.
+        with self.assertRaises(ModelSetupCancelled):
+            self._run(["", "", "m", "", ""])
 
-    def test_metadata_declares_function_calling(self):
-        name, _ = self._run(["1", "https://x/v1", "k", "m", "", ""])
-        # Agent modu tool calling'e bağlı; metadata bunu bildirmezse aider
-        # modeli araçsız sanabilir.
-        self.assertTrue(self._meta()[name]["supports_function_calling"])
+    def test_yardimci_dosyalar_tek_dizinde(self):
+        self._run(["https://x/v1", "k", "m", "", ""])
+        self.assertTrue((self.home / ".aider" / "model.settings.yml").is_file())
+        self.assertTrue((self.home / ".aider" / "model.metadata.json").is_file())
 
-    def test_custom_context_window_is_honoured(self):
-        name, _ = self._run(["1", "https://x/v1", "k", "m", "128000", "4096"])
-        self.assertEqual(self._meta()[name]["max_input_tokens"], 128000)
-        self.assertEqual(self._meta()[name]["max_output_tokens"], 4096)
+    def test_conf_yardimci_dosyalari_gosteriyor(self):
+        # aider'ın üç dosyası tek dosyada birleştirilemiyor; conf ikisini
+        # göstermezse ~/.aider altındaki dosyalar hiç okunmaz.
+        self._run(["https://x/v1", "k", "m", "", ""])
+        conf = self._conf()
+        self.assertEqual(
+            conf["model-settings-file"], str(self.home / ".aider" / "model.settings.yml")
+        )
+        self.assertEqual(
+            conf["model-metadata-file"], str(self.home / ".aider" / "model.metadata.json")
+        )
 
-    def test_config_file_is_not_world_readable(self):
-        # Dosya API anahtarı taşıyor.
-        self._run(["1", "https://x/v1", "gizli", "m", "", ""])
-        mode = (self.home / ".aider.conf.yml").stat().st_mode & 0o777
-        self.assertEqual(mode, 0o600)
+    def test_eski_konumdaki_tanimlar_tasiniyor(self):
+        eski = self.home / ".aider.model.metadata.json"
+        eski.write_text(json.dumps({"openai/onceki": {"max_input_tokens": 4096}}), encoding="utf-8")
+        self._run(["https://x/v1", "k", "yeni", "", ""])
+        self.assertIn("openai/onceki", self._meta())
+        self.assertIn("openai/yeni", self._meta())
 
     def test_second_model_replaces_not_duplicates(self):
-        self._run(["1", "https://x/v1", "k", "model-a", "", ""])
-        self._run(["1", "https://y/v1", "k", "model-a", "", ""])
+        self._run(["https://x/v1", "k", "model-a", "", ""])
+        self._run(["https://y/v1", "k", "model-a", "", ""])
         names = [s["name"] for s in self._settings()]
         self.assertEqual(names.count("openai/model-a"), 1)
 
     def test_adding_a_model_keeps_the_previous_one(self):
-        self._run(["1", "https://x/v1", "k", "model-a", "", ""])
-        self._run(["1", "https://x/v1", "k", "model-b", "", ""])
+        self._run(["https://x/v1", "k", "model-a", "", ""])
+        self._run(["https://x/v1", "k", "model-b", "", ""])
         names = {s["name"] for s in self._settings()}
         self.assertEqual(names, {"openai/model-a", "openai/model-b"})
         self.assertEqual(set(self._meta()), {"openai/model-a", "openai/model-b"})
 
     def test_empty_model_name_is_rejected(self):
         with self.assertRaises(ModelSetupCancelled):
-            self._run(["1", "https://x/v1", "k", "", "", ""])
+            self._run(["https://x/v1", "k", "", "", ""])
+
+    def test_edit_format_defaults_to_agent(self):
+        self._run(["https://x/v1", "k", "m", "", ""])
+        self.assertEqual(self._conf()["edit-format"], "agent")
+        self.assertEqual(self._settings()[0]["edit_format"], "agent")
+
+    def test_metadata_declares_function_calling(self):
+        name, _ = self._run(["https://x/v1", "k", "m", "", ""])
+        # Agent modu tool calling'e bağlı; metadata bunu bildirmezse aider
+        # modeli araçsız sanabilir.
+        self.assertTrue(self._meta()[name]["supports_function_calling"])
+
+    def test_custom_context_window_is_honoured(self):
+        name, _ = self._run(["https://x/v1", "k", "m", "128000", "4096"])
+        self.assertEqual(self._meta()[name]["max_input_tokens"], 128000)
+        self.assertEqual(self._meta()[name]["max_output_tokens"], 4096)
+
+    def test_config_file_is_not_world_readable(self):
+        # Dosya API anahtarı taşıyor.
+        self._run(["https://x/v1", "gizli", "m", "", ""])
+        mode = (self.home / ".aider.conf.yml").stat().st_mode & 0o777
+        self.assertEqual(mode, 0o600)
 
     def test_invalid_context_is_reprompted(self):
         # 'abc' ve '0' reddedilmeli, sonra 5000 kabul edilmeli.
-        name, _ = self._run(["1", "https://x/v1", "k", "m", "abc", "0", "5000", ""])
+        name, _ = self._run(["https://x/v1", "k", "m", "abc", "0", "5000", ""])
         self.assertEqual(self._meta()[name]["max_input_tokens"], 5000)
+
+
+class TestTabanAdresi(unittest.TestCase):
+    """Kullanıcı tarayıcıdan ne yapıştırırsa yapıştırsın çalışmalı."""
+
+    def test_bicimler(self):
+        from aider.agent.model_setup import taban_adresi
+
+        beklenen = {
+            "http://sunucu:8000/v1": "http://sunucu:8000/v1",
+            "http://sunucu:8000/v1/": "http://sunucu:8000/v1",
+            "http://sunucu:8000": "http://sunucu:8000/v1",
+            "sunucu:8000": "http://sunucu:8000/v1",
+            "https://llm.kurum/api/v1/models": "https://llm.kurum/api/v1",
+            "https://llm.kurum/v1/chat/completions": "https://llm.kurum/v1",
+            "  http://sunucu:8000/v1  ": "http://sunucu:8000/v1",
+            "": "",
+        }
+        for girdi, cikti in beklenen.items():
+            with self.subTest(girdi=girdi):
+                self.assertEqual(taban_adresi(girdi), cikti)
 
 
 # ---------------------------------------------------------------------------
@@ -1927,9 +1986,7 @@ class TestSshTool(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.ctx = make_ctx(self.root)
         self.tool = SshTool()
-        self.patcher = patch(
-            "aider.agent.ssh_tool.known_hosts", return_value=["skyup", "fedora"]
-        )
+        self.patcher = patch("aider.agent.ssh_tool.known_hosts", return_value=["skyup", "fedora"])
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
         # Gerçek ~/.ssh/known_hosts okunmasın: testin sonucu makinede hangi
@@ -2015,9 +2072,7 @@ class TestSshTool(unittest.TestCase):
     def test_envanter_degiskeni_host_sanilmaz(self):
         from aider.agent.ssh_tool import envanter_hostlari
 
-        (self.root / "hosts.ini").write_text(
-            "[web]\nweb01\n\n[web:vars]\nansible_user=root\n"
-        )
+        (self.root / "hosts.ini").write_text("[web]\nweb01\n\n[web:vars]\nansible_user=root\n")
         adlar = envanter_hostlari(self.root)
         self.assertIn("web01", adlar)
         self.assertNotIn("ansible_user=root", adlar)
@@ -2131,9 +2186,10 @@ class TestToolResultVisibility(unittest.TestCase):
         self.tmp.cleanup()
 
     def _basilan(self, name, result):
-        with patch.object(self.io, "tool_output") as cikti, patch.object(
-            self.io, "tool_error"
-        ) as hata:
+        with (
+            patch.object(self.io, "tool_output") as cikti,
+            patch.object(self.io, "tool_error") as hata,
+        ):
             self.coder._show_tool_result(name, result)
         return (
             [c.args[0] for c in cikti.call_args_list if c.args],
@@ -2263,9 +2319,7 @@ class TestEmptyModelReply(unittest.TestCase):
         # yalnızca özetlenmedi.
         coder = self._coder(
             [
-                FakeMessage(
-                    tool_calls=[FakeToolCall("c1", "Glob", json.dumps({"pattern": "*"}))]
-                ),
+                FakeMessage(tool_calls=[FakeToolCall("c1", "Glob", json.dumps({"pattern": "*"}))]),
                 FakeMessage(content=""),
                 FakeMessage(content=""),  # dürtmeden sonra da boş
             ]
@@ -2395,9 +2449,7 @@ General Options:
     # --- üretim -------------------------------------------------------------
 
     def test_referans_ve_iskelet_yazilir(self):
-        ad, bulgu, yazilan = beceri_uret.uret(
-            self.root, "pip", calistir=self._calistirici()
-        )
+        ad, bulgu, yazilan = beceri_uret.uret(self.root, "pip", calistir=self._calistirici())
         self.assertEqual(ad, "pip")
         self.assertEqual([a for a, _ in bulgu["alt"]], ["install", "uninstall", "freeze"])
 
@@ -2422,9 +2474,7 @@ General Options:
         skill_md.parent.mkdir(parents=True)
         skill_md.write_text("---\nname: pip\ndescription: elle yazıldı\n---\n\nEMEK\n")
 
-        _ad, _bulgu, yazilan = beceri_uret.uret(
-            self.root, "pip", calistir=self._calistirici()
-        )
+        _ad, _bulgu, yazilan = beceri_uret.uret(self.root, "pip", calistir=self._calistirici())
         self.assertIn("EMEK", skill_md.read_text(encoding="utf-8"))
         self.assertEqual([y.name for y in yazilan], ["yardim.md"])
 
@@ -3251,9 +3301,7 @@ class TestBaglamToparlama(unittest.TestCase):
             self.assertTrue(self.coder._baglami_toparla(gecmis))
         toplam = sum(len(str(m.get("content") or "")) for m in gecmis)
         self.assertLessEqual(toplam, 20_000)
-        self.assertTrue(
-            any("kısaltıldı" in str(m.get("content") or "") for m in gecmis)
-        )
+        self.assertTrue(any("kısaltıldı" in str(m.get("content") or "") for m in gecmis))
 
     def test_arac_mesajlari_atilmaz_yetim_kalmaz(self):
         # tool mesajını tümden atmak, tool_calls taşıyan assistant mesajını
@@ -3378,8 +3426,9 @@ class TestModelListeleme(unittest.TestCase):
                 {"id": "llama-3.3-70b", "max_model_len": 8192},
             ]
         }
-        # tip, adres, anahtar, model seçimi (2), pencere, çıktı
-        self.io.prompt_ask.side_effect = ["1", "https://llm.kurum/v1", "k", "2", "", ""]
+        # adres, model seçimi (2), pencere, çıktı — liste geldiği için anahtar
+        # sorulmuyor.
+        self.io.prompt_ask.side_effect = ["https://llm.kurum/v1", "2", "", ""]
         with patch("aider.agent.model_setup._istek", self._yanitlar(models=models)):
             ad, _yazilan = run_setup(self.io, home=self.home)
         self.assertEqual(ad, "openai/llama-3.3-70b")
@@ -3389,12 +3438,11 @@ class TestModelListeleme(unittest.TestCase):
 
         models = {"data": [{"id": "qwen3-coder", "max_model_len": 131072}]}
         # Pencere sorusunda boş bırakılıyor: varsayılan endpoint'ten gelmeli.
-        self.io.prompt_ask.side_effect = ["1", "https://llm.kurum/v1", "k", "1", "", ""]
+        self.io.prompt_ask.side_effect = ["https://llm.kurum/v1", "1", "", ""]
         with patch("aider.agent.model_setup._istek", self._yanitlar(models=models)):
             ad, _y = run_setup(self.io, home=self.home)
-        meta = json.loads(
-            (self.home / ".aider.model.metadata.json").read_text(encoding="utf-8")
-        )
+        yol = self.home / ".aider" / "model.metadata.json"
+        meta = json.loads(yol.read_text(encoding="utf-8"))
         self.assertEqual(meta[ad]["max_input_tokens"], 131072)
 
     def test_listede_yok_secenegi_elle_yazdirir(self):
@@ -3402,9 +3450,7 @@ class TestModelListeleme(unittest.TestCase):
 
         models = {"data": [{"id": "qwen3-coder"}]}
         # Son seçenek "listede yok": iki model varken numara 2.
-        self.io.prompt_ask.side_effect = [
-            "1", "https://llm.kurum/v1", "k", "2", "ozel-model", "", ""
-        ]
+        self.io.prompt_ask.side_effect = ["https://llm.kurum/v1", "2", "ozel-model", "", ""]
         with patch("aider.agent.model_setup._istek", self._yanitlar(models=models)):
             ad, _y = run_setup(self.io, home=self.home)
         self.assertEqual(ad, "openai/ozel-model")
@@ -3412,7 +3458,8 @@ class TestModelListeleme(unittest.TestCase):
     def test_liste_alinamazsa_elle_girise_duser(self):
         from aider.agent.model_setup import run_setup
 
-        self.io.prompt_ask.side_effect = ["1", "https://llm.kurum/v1", "k", "elle-model", "", ""]
+        # Liste hiç gelmiyor: anahtar soruluyor, sonra kimlik elle isteniyor.
+        self.io.prompt_ask.side_effect = ["https://llm.kurum/v1", "k", "elle-model", "", ""]
         with patch("aider.agent.model_setup._istek", return_value=None):
             ad, _y = run_setup(self.io, home=self.home)
         self.assertEqual(ad, "openai/elle-model")
@@ -3514,9 +3561,7 @@ class TestIkameAcigi(unittest.TestCase):
     def test_izin_kurali_ikameyi_actiramaz(self):
         # Açık bir allow kuralı bile ikameli komutu otomatik onaylayamaz.
         perms = PermissionSet(allow=["Bash(echo:*)"], mode=MODE_ASK)
-        self.assertEqual(
-            perms.decide("Bash", {"command": "echo $(whoami)"}, mutating=True), ASK
-        )
+        self.assertEqual(perms.decide("Bash", {"command": "echo $(whoami)"}, mutating=True), ASK)
 
 
 class TestSshConfigInclude(unittest.TestCase):
@@ -3659,9 +3704,7 @@ class TestFrontmatterAyristirma(unittest.TestCase):
         self.assertEqual(meta["name"], "tirnakli")
 
     def test_yorum_satirlari_atlanir(self):
-        meta, _ = _parse_frontmatter(
-            "---\n# bu bir yorum\nname: x\ndescription: y\n---\n\ngövde\n"
-        )
+        meta, _ = _parse_frontmatter("---\n# bu bir yorum\nname: x\ndescription: y\n---\n\ngövde\n")
         self.assertEqual(meta["name"], "x")
         self.assertNotIn("#", meta)
 

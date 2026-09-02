@@ -1,13 +1,27 @@
 """Program içinden adım adım model tanımlama.
 
-/model-ekle komutunun arkasındaki mantık. Endpoint tipini ve adresini sorar,
+/model-ekle komutunun arkasındaki mantık. Tek soru sorar — endpoint adresi —,
 sunulan modelleri /v1/models üzerinden listeleyip seçtirir, bağlam penceresini
 yanıttan okur, fonksiyon çağırma desteğini küçük bir istekle dener ve aider'ın
-ev dizinindeki üç yapılandırma dosyasını yazar:
+yapılandırmasını yazar.
 
-    ~/.aider.conf.yml              model adı, endpoint adresi, anahtar
-    ~/.aider.model.settings.yml    edit_format, repo-map, sıcaklık
-    ~/.aider.model.metadata.json   bağlam penceresi
+Eskiden ilk soru "endpoint tipi" idi (kurum / ollama / yerel). Üçü de aynı
+litellm sağlayıcısını (`openai/`) kullandığı için soru yalnızca hangi
+varsayılan adresin doldurulacağını seçiyordu; kullanıcı zaten adresi
+yazacaksa sorunun bir karşılığı yok. Kaldırıldı.
+
+Yazılan dosyalar:
+
+    ~/.aider.conf.yml               model adı, endpoint adresi, anahtar
+    ~/.aider/model.settings.yml     edit_format, repo-map, sıcaklık
+    ~/.aider/model.metadata.json    bağlam penceresi
+
+Üç dosya aider'ın kendi tasarımı, fork'un icadı değil: biri CLI varsayılanları,
+biri litellm model ayarları, biri litellm maliyet/pencere verisi. Tek dosyada
+birleştirilemiyorlar ama tek dizinde toplanabiliyorlar — conf dosyası
+`model-settings-file` ve `model-metadata-file` ile ikisini gösteriyor.
+`~/.aider.conf.yml` yerinde kalmak zorunda: aider'ın kendiliğinden bulduğu
+giriş noktası orası.
 
 Ev dizinine yazılır, böylece tanım tüm projelerde geçerli olur. Anahtar içeren
 dosya 0600 izniyle oluşturulur.
@@ -28,35 +42,6 @@ HTTP_ZAMAN_ASIMI = 10
 # /v1/models yanıtında bağlam penceresinin görülebildiği alanlar. vLLM
 # "max_model_len" veriyor, kimi ağ geçitleri "context_length".
 PENCERE_ALANLARI = ("max_model_len", "context_length", "max_input_tokens", "context_window")
-
-# Endpoint tipleri: (etiket, litellm öneki, varsayılan taban adres, anahtar gerekli mi)
-ENDPOINT_TYPES = [
-    (
-        "kurum",
-        "Kurum içi OpenAI uyumlu endpoint (vLLM, LiteLLM gateway, TGI)",
-        "openai/",
-        "",
-        True,
-    ),
-    (
-        # DİKKAT: litellm'in 'ollama_chat/' sağlayıcısı araç sonucu mesajlarını
-        # (role="tool") modele ulaştırmıyor; model sonucu hiç görmüyor ve aynı
-        # aracı sonsuza dek çağırıyor. Ollama'nın OpenAI uyumlu ucu (/v1) ham
-        # istekte doğru çalıştığı için agent modunda o yol kullanılıyor.
-        "ollama",
-        "Yerel Ollama (OpenAI uyumlu /v1 ucu üzerinden)",
-        "openai/",
-        "http://localhost:11434/v1",
-        False,
-    ),
-    (
-        "yerel",
-        "Yerel OpenAI uyumlu sunucu (llama.cpp, vLLM)",
-        "openai/",
-        "http://localhost:8000/v1",
-        False,
-    ),
-]
 
 DEFAULT_CONTEXT = 262144
 DEFAULT_MAX_OUTPUT = 8192
@@ -83,6 +68,25 @@ def _istek(url, api_key, veri=None, timeout=HTTP_ZAMAN_ASIMI):
             return json.loads(yanit.read().decode("utf-8", "replace"))
     except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError):
         return None
+
+
+def taban_adresi(url):
+    """Kullanıcının yapıştırdığı adresi /v1 ile biten bir tabana çevir.
+
+    Kullanıcı tarayıcıdan ya da bir belgeden ne yapıştırırsa yapıştırsın
+    çalışsın: şema eksik olabilir, sonda /models ya da /chat/completions
+    kalmış olabilir, /v1 hiç yazılmamış olabilir.
+    """
+    url = (url or "").strip().rstrip("/")
+    if not url:
+        return ""
+    if not url.startswith(("http://", "https://")):
+        url = "http://" + url
+    if url.endswith("/v1"):
+        return url
+    if "/v1/" in url:
+        return url[: url.index("/v1/") + 3]
+    return url + "/v1"
 
 
 def modelleri_getir(api_base, api_key):
@@ -210,15 +214,16 @@ def _ask_int(io, question, default):
         return value
 
 
-def _model_sec(io, api_base, api_key):
+def _model_sec(io, api_base, api_key, kayitlar=None):
     """Modeli endpoint listesinden seçtir; liste alınamazsa elle sor.
 
     (model_kimligi, ham_kayit) döndürür. Kayıt, bağlam penceresi gibi ek
     alanları taşıyabildiği için birlikte dönüyor.
     """
-    io.tool_output()
-    io.tool_output("Endpoint'teki modeller alınıyor...")
-    kayitlar = modelleri_getir(api_base, api_key)
+    if kayitlar is None:
+        io.tool_output()
+        io.tool_output("Endpoint'teki modeller alınıyor...")
+        kayitlar = modelleri_getir(api_base, api_key)
 
     if not kayitlar:
         io.tool_warning("Model listesi alınamadı; kimliği elle gir.")
@@ -270,31 +275,38 @@ def run_setup(io, home=None):
     io.tool_output()
     io.tool_output("Model tanımlama. Boş bırakırsan köşeli parantezdeki değer kullanılır.")
 
-    kind = _ask_choice(
-        io,
-        "Endpoint tipi",
-        [(k, desc) for k, desc, _, _, _ in ENDPOINT_TYPES],
+    # Tek soru: adres. Şema, sondaki /models, eksik /v1 — hepsi düzeltiliyor.
+    ham = io.prompt_ask(
+        "Endpoint adresi (ör. http://sunucu:8000/v1)",
+        default=os.environ.get("OPENAI_API_BASE", ""),
     )
-    _, _, prefix, default_base, needs_key = next(t for t in ENDPOINT_TYPES if t[0] == kind)
+    api_base = taban_adresi(ham)
+    if not api_base:
+        raise ModelSetupCancelled("endpoint adresi boş bırakıldı")
+    if api_base != (ham or "").strip():
+        io.tool_output(f"Adres: {api_base}")
 
-    # Sıra bilinçli: modeli sormadan ÖNCE endpoint gerekiyor, çünkü model
-    # listesi endpoint'ten çekiliyor. Kullanıcının model kimliğini elle
-    # yazması artık son çare.
-    api_base = io.prompt_ask("Endpoint adresi (sonu /v1)", default=default_base).strip()
-    # Kullanıcı alanı temizlerse endpoint tipinin varsayılanına dön; adressiz
-    # yapılandırma sessizce yanlış sunucuya (api.openai.com) gider.
-    api_base = api_base or default_base
-
+    # Anahtar ancak gerekiyorsa sorulur. Önce anahtarsız denenir; kurum
+    # endpoint'lerinin çoğu ağ içinden anahtarsız yanıt veriyor ve gereksiz
+    # soru akışı uzatmaktan başka işe yaramıyor.
     api_key = ""
-    if needs_key or api_base:
-        api_key = io.prompt_ask("API anahtarı (endpoint istemiyorsa boş bırak)", default="").strip()
+    kayitlar = modelleri_getir(api_base, api_key)
+    if not kayitlar:
+        io.tool_output("Model listesi anahtarsız alınamadı.")
+        api_key = io.prompt_ask(
+            "API anahtarı (gerekmiyorsa boş bırak)", default=os.environ.get("OPENAI_API_KEY", "")
+        ).strip()
+        if api_key:
+            kayitlar = modelleri_getir(api_base, api_key)
 
-    raw_name, kayit = _model_sec(io, api_base, api_key)
+    raw_name, kayit = _model_sec(io, api_base, api_key, kayitlar)
     if not raw_name:
         raise ModelSetupCancelled("model kimliği boş bırakıldı")
 
-    # Kullanıcı öneki kendisi yazdıysa iki kez eklemeyelim.
-    model_name = raw_name if "/" in raw_name else prefix + raw_name
+    # litellm sağlayıcısı her zaman openai/: OpenAI uyumlu /v1 ucu olan her
+    # sunucu (vLLM, llama.cpp, Ollama'nın /v1'i, LiteLLM ağ geçidi) bu yoldan
+    # doğru çalışıyor. Kullanıcı öneki kendisi yazdıysa iki kez eklemeyelim.
+    model_name = raw_name if "/" in raw_name else "openai/" + raw_name
 
     # Pencere endpoint'ten okunabildiyse varsayılan o olsun; kullanıcı yine
     # değiştirebilir.
@@ -320,11 +332,19 @@ def run_setup(io, home=None):
         conf["openai-api-key"] = api_key
     # Kurum modelleri aider'ın veritabanında olmadığı için uyarı basar.
     conf["show-model-warnings"] = False
+    # İki yardımcı dosyayı conf gösteriyor; böylece ev dizininde üç ayrı nokta
+    # yerine tek giriş noktası (bu dosya) ve tek dizin (~/.aider) kalıyor.
+    conf["model-settings-file"] = str(home / ".aider" / "model.settings.yml")
+    conf["model-metadata-file"] = str(home / ".aider" / "model.metadata.json")
     _write_private(conf_path, yaml.safe_dump(conf, allow_unicode=True, sort_keys=False))
     written.append(conf_path)
 
-    settings_path = home / ".aider.model.settings.yml"
-    settings = _read_yaml(settings_path)
+    ayar_dizini = home / ".aider"
+    ayar_dizini.mkdir(parents=True, exist_ok=True)
+
+    settings_path = ayar_dizini / "model.settings.yml"
+    eski_settings = home / ".aider.model.settings.yml"
+    settings = _read_yaml(settings_path if settings_path.is_file() else eski_settings)
     if not isinstance(settings, list):
         settings = []
     settings = [s for s in settings if s.get("name") != model_name]
@@ -344,8 +364,9 @@ def run_setup(io, home=None):
     )
     written.append(settings_path)
 
-    meta_path = home / ".aider.model.metadata.json"
-    meta = _read_json(meta_path)
+    meta_path = ayar_dizini / "model.metadata.json"
+    eski_meta = home / ".aider.model.metadata.json"
+    meta = _read_json(meta_path if meta_path.is_file() else eski_meta)
     meta[model_name] = {
         "max_input_tokens": context,
         "max_output_tokens": max_output,
@@ -357,5 +378,9 @@ def run_setup(io, home=None):
     }
     meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     written.append(meta_path)
+
+    for eski in (eski_settings, eski_meta):
+        if eski.is_file():
+            io.tool_warning(f"Artık okunmuyor (içeriği taşındı), silebilirsin: {eski}")
 
     return model_name, written

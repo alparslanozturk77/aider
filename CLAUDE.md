@@ -147,6 +147,40 @@ Ayrıntılı yordam, her dokunuş noktasının tam yaması ve çakışma çözme
 **`BIRLESTIRME.md`**. Aylar sonra okuyacak kişi için yazıldı; yamaları elle
 geri koyabilecek kadar ayrıntılı.
 
+## Model ekleme ve yapılandırma dosyaları
+
+`/model-ekle` tek soru soruyor: endpoint adresi. Adres normalize ediliyor —
+şema eksikse `http://` ekleniyor, `/v1` yoksa ekleniyor, sonda kalmış
+`/models` ya da `/chat/completions` kırpılıyor. Sonra `/v1/models` çekiliyor,
+model listeden seçiliyor, pencere yanıttan okunuyor, araç desteği küçük bir
+istekle deneniyor.
+
+Anahtar ancak liste anahtarsız alınamazsa soruluyor. Boş adres artık
+reddediliyor: eskiden varsayılana düşüyordu ve adressiz yapılandırma sessizce
+`api.openai.com`'a gidiyor — hava boşluklu ortamda bu sessiz bir sızıntı.
+
+**"Endpoint tipi" sorusu kaldırıldı.** Üç seçenek de (kurum / ollama / yerel)
+aynı litellm sağlayıcısını, `openai/`, kullanıyordu; soru yalnızca hangi
+varsayılan adresin doldurulacağını seçiyordu. Kullanıcı zaten adresi
+yazacaksa karşılığı yok.
+
+Üç yapılandırma dosyası **aider'ın kendi tasarımı**, fork'un icadı değil:
+
+| Dosya | Kim okuyor | Neden ayrı |
+|---|---|---|
+| `~/.aider.conf.yml` | aider CLI | Komut satırı varsayılanları (YAML sözlük) |
+| `~/.aider/model.settings.yml` | aider model katmanı | Model başına edit_format, sıcaklık (YAML **liste**) |
+| `~/.aider/model.metadata.json` | litellm | Pencere ve maliyet (**JSON** sözlük) |
+
+Üçü farklı biçimde ve farklı tüketiciye ait olduğu için tek dosyada
+birleştirilemiyorlar. Ama tek dizinde toplanabiliyorlar: conf dosyası
+`model-settings-file` ve `model-metadata-file` ile diğer ikisini gösteriyor,
+ikisi de `~/.aider/` altında. `~/.aider.conf.yml` yerinde kalmak zorunda —
+aider'ın kendiliğinden bulduğu giriş noktası orası.
+
+Eski konumdaki (`~/.aider.model.*`) tanımlar taşınıyor ve kullanıcı eski
+dosyaları silebileceği konusunda uyarılıyor.
+
 ## Beceriler
 
 Programla birlikte 37 beceri geliyor (`aider/beceriler/`). Agent modunda model bunları
@@ -323,12 +357,20 @@ durumda da çalışır.
 
 | | önce | sonra |
 |---|---|---|
-| sistem promptu | 4.549 token | 1.112 token |
-| araç şemaları | 2.257 token | 2.257 token |
-| **sabit yük** | **%42** | **%21** |
-| 800 satır okuduktan sonra kalan | 1.328 token | 7.806 token |
+| sistem promptu | 4.549 token | 1.186 token |
+| araç şemaları | 2.257 token | 1.488 token |
+| **sabit yük** | **%42** | **%16** |
+| 800 satır okuduktan sonra kalan | 1.328 token | 9.564 token |
 
 `TestKucukPencere` sabit yükün pencerenin çeyreğini aşmadığını sınıyor.
+
+**Dar pencerede lüks araçların şeması sunulmuyor.** Araç şemaları her isteğe
+giriyor: on aracın şeması 2.246 token, 16k pencerenin %14'ü. `Skill`,
+`Hatirla` ve `TodoWrite` bunun 766 token'ı (%4,7) ve 4B sınıfı bir modelin
+neredeyse hiç çağırmadığı araçlar. `KUCUK_PENCERE` (32k) altında sunulmuyorlar;
+yetenek kaybolmuyor çünkü beceri tetikleme zaten kodda deterministik ve
+`/hatirla` kullanıcıda duruyor. Açılış duyurusunda hangi araçların düştüğü
+yazıyor.
 
 **Read bütçeye göre sayfalıyor.** Eskiden 2000 satır okuyup sonucu ortadan
 kırpıyordu: model dosyanın yarısını görüyor ama kalanını nereden isteyeceğini
