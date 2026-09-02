@@ -18,6 +18,10 @@ Araç seçimi:
   yazımda Write.
 - Derleme, test, git, paket yöneticisi gibi işler için Bash.
 
+Toplu dönüşümlerde (yüzlerce satırlık liste, envanter, log) dosyanın yeni
+hâlini yazmaya çalışma — bir Bash betiği yaz, dönüşümü o yapsın. Dosya bağlama
+sığmasa bile betik çalışır.
+
 Bağımsız araç çağrılarını tek seferde birlikte gönder; birbirine bağlı olanları
 sırayla yap.
 
