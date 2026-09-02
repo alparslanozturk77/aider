@@ -305,6 +305,37 @@ var; harita her isteğe yeniden giriyor ve sohbete dosya eklenmemişken
 12.000 ve 20.000 karakter, 8k pencereli bir modelde iş yapacak yer
 bırakmıyordu; artık pencerenin yüzde 10'u ve 15'i, eski değerler tavan.
 
+**Karakter/token oranı 4 değil 2.** `KARAKTER_BASINA_TOKEN` bütün bütçeleri
+token'dan karaktere çeviriyor ve 4 yazıyordu — İngilizce düz metin için doğru,
+bu fork'un çalıştığı içerik için değil. Ölçüldü (gpt-4o tokenizer): Türkçe
+sistem promptu 2,70 kar/token, sunucu envanteri gibi yapılı metin 2,02. Yani
+"pencerenin çeyreği" diye ayrılan yer gerçekte yarısını yiyordu. Sabit en kötü
+ölçüme, 2.0'a çekildi; iyimser olmanın bedeli modelin ortada kalması.
+
+**Beceri katalogu pencereye göre kısılıyor.** 37 becerinin ad + açıklama
+listesi 9.838 karakter, yani 16k pencereli bir modelde HER istekte ~3.650
+token — pencerenin beşte biri. Karşılığı da yok: beceri seçimi `eslestir` ile
+kodda yapılıyor, model bu listeden seçmiyor. Bütçe (`KATALOG_PAYI`) yetmezse
+katalog önce adlara iner, sonra tümden düşer; deterministik tetikleme üç
+durumda da çalışır.
+
+Ölçüm, 16k pencere, gpt-4o tokenizer:
+
+| | önce | sonra |
+|---|---|---|
+| sistem promptu | 4.549 token | 1.112 token |
+| araç şemaları | 2.257 token | 2.257 token |
+| **sabit yük** | **%42** | **%21** |
+| 800 satır okuduktan sonra kalan | 1.328 token | 7.806 token |
+
+`TestKucukPencere` sabit yükün pencerenin çeyreğini aşmadığını sınıyor.
+
+**Read bütçeye göre sayfalıyor.** Eskiden 2000 satır okuyup sonucu ortadan
+kırpıyordu: model dosyanın yarısını görüyor ama kalanını nereden isteyeceğini
+bilmiyordu. Artık sayfa bütçeden hesaplanıyor ve başlıkta devam offset'i
+**açıkça** yazıyor (`devamı için Read(offset=148)`). 800 satırlık bir envanter
+16k pencerede altı sayfada okunuyor, hiçbiri pencereyi taşırmıyor.
+
 **Uzun oturumlar özetlenerek sıkıştırılıyor.** `_baglami_toparla` yalnızca
 tek bir mesajın araç döngüsü içinde çalışıyordu; turlar arasında biriken
 geçmişe kimse dokunmuyordu. Aider'da o işi `move_back_cur_messages` yapar

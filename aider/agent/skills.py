@@ -173,12 +173,30 @@ class SkillLibrary:
             auto=str(meta.get("auto", "true")).strip().lower() not in ("false", "hayir", "hayır"),
         )
 
-    def catalog(self):
-        """Sistem promptuna gömülecek kısa liste."""
+    def catalog(self, butce=None):
+        """Sistem promptuna gömülecek liste — bütçeye göre kademeli.
+
+        Ölçüldü: 37 becerinin tam açıklaması 9.838 karakter, yani 16k
+        pencereli bir modelde HER istekte ~3.650 token — pencerenin beşte
+        biri. Üstelik karşılığı yok: beceri seçimi `eslestir` ile kodda
+        yapılıyor, model bu listeden seçmiyor.
+
+        Bütçe yetmezse önce açıklamalar düşer (yalnızca adlar kalır), o da
+        sığmazsa liste tümden düşer. Deterministik tetikleme her üç durumda
+        da çalışmaya devam eder.
+        """
         if not self.skills:
             return ""
-        lines = [f"- {s.name}: {s.description}" for s in self.skills.values()]
-        return "\n".join(lines)
+
+        tam = "\n".join(f"- {s.name}: {s.description}" for s in self.skills.values())
+        if not butce or len(tam) <= butce:
+            return tam
+
+        adlar = ", ".join(sorted(self.skills))
+        if len(adlar) <= butce:
+            return adlar
+
+        return ""
 
     def get(self, name):
         return self.skills.get(name)

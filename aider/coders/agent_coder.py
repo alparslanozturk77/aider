@@ -76,6 +76,13 @@ TALIMAT_PAYI = 0.15
 BECERI_PAYI = 0.25
 BECERI_TAVANI = 8_000
 
+# Beceri katalogunun (37 satırlık ad + açıklama listesi) alabileceği pay.
+# Ölçüldü: tam katalog 9.838 karakter, 16k pencerede her istekte ~3.650
+# token. Karşılığı yok — beceri seçimi kodda yapılıyor, model bu listeden
+# seçmiyor. Bütçe yetmezse katalog önce adlara iner, sonra tümden düşer.
+KATALOG_PAYI = 0.05
+KATALOG_TAVANI = 12_000
+
 # Geri yüklenen önceki oturumun bağlam penceresinden alabileceği pay.
 # Geçmiş, iş yapacak yerin tamamını yiyemez.
 DEVAM_PAYI = 0.30
@@ -146,6 +153,7 @@ class AgentCoder(Coder):
         self.ctx.plan_mode = self.plan_mode
 
         self.beceri_butcesi = self._prompt_butcesi(BECERI_PAYI, BECERI_TAVANI)
+        self.katalog_butcesi = self._prompt_butcesi(KATALOG_PAYI, KATALOG_TAVANI)
         self.bellek_butcesi = self._prompt_butcesi(BELLEK_PAYI, MEMORY_BUDGET)
         self.talimat_butcesi = self._prompt_butcesi(TALIMAT_PAYI, INSTRUCTION_BUDGET)
         self.instructions, self.instruction_files = load_instructions(
@@ -214,7 +222,7 @@ class AgentCoder(Coder):
             pencere = None
         if not pencere:
             return tavan
-        return max(1_000, min(tavan, int(pencere * pay) * 4))
+        return max(1_000, min(tavan, int(pencere * pay * KARAKTER_BASINA_TOKEN)))
 
     # ------------------------------------------------------------------
     # Durum çubuğu ve mod değiştirme
@@ -342,7 +350,7 @@ class AgentCoder(Coder):
     def fmt_system_prompt(self, prompt):
         out = super().fmt_system_prompt(prompt)
 
-        catalog = self.ctx.skills.catalog()
+        catalog = self.ctx.skills.catalog(self.katalog_butcesi)
         if catalog:
             out += self.gpt_prompts.skills_prompt.format(skills=catalog)
 
@@ -555,7 +563,7 @@ class AgentCoder(Coder):
             pencere = None
         if not pencere:
             return None
-        return int(pencere * DOLULUK_ESIGI) * KARAKTER_BASINA_TOKEN
+        return int(pencere * DOLULUK_ESIGI * KARAKTER_BASINA_TOKEN)
 
     def _oto_sikistir(self):
         """Turlar arası biriken geçmişi, pencere dolmadan önce özetle.

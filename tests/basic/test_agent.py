@@ -3915,3 +3915,141 @@ class TestSikistirmaCoder(unittest.TestCase):
 
         coder._oto_sikistir()
         coder.main_model.simple_send_with_retries.assert_not_called()
+
+
+class TestKucukPencere(unittest.TestCase):
+    """16k pencereli bir modelde sabit yük iş yapacak yer bırakmalı.
+
+    Ölçüm (gpt-4o tokenizer, 16.384 token pencere): düzeltmeden önce sistem
+    promptu 4.549 token, bunun 3.646'sı 37 becerinin katalogu. Araç şemaları
+    2.257. Toplam sabit yük pencerenin %42'si; 800 satırlık bir dosyayı bir
+    kez okumak kalanı bitiriyordu.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.prev = os.getcwd()
+        os.chdir(self.root)
+
+    def tearDown(self):
+        os.chdir(self.prev)
+        self.tmp.cleanup()
+
+    def _coder(self, pencere):
+        from aider.coders import Coder
+        from aider.io import InputOutput
+        from aider.models import Model
+
+        model = Model("gpt-4o")
+        model.info = dict(model.info or {})
+        model.info["max_input_tokens"] = pencere
+        return Coder.create(
+            main_model=model,
+            edit_format="agent",
+            io=InputOutput(yes=True, pretty=False, fancy_input=False),
+            fnames=[],
+            use_git=False,
+            stream=False,
+        )
+
+    def test_sabit_yuk_pencerenin_dortte_birini_asmaz(self):
+        coder = self._coder(16384)
+        sistem = coder.fmt_system_prompt(coder.gpt_prompts.main_system)
+        semalar = json.dumps(
+            coder.registry.schemas(enabled=coder.available_tools()), ensure_ascii=False
+        )
+        sabit = coder.main_model.token_count(sistem) + coder.main_model.token_count(semalar)
+        self.assertLess(sabit, 16384 * 0.25, f"sabit yük {sabit} token")
+
+    def test_katalog_kucuk_pencerede_adlara_iner(self):
+        coder = self._coder(16384)
+        katalog = coder.ctx.skills.catalog(coder.katalog_butcesi)
+        self.assertNotIn("\n- ", katalog, "küçük pencerede tam açıklamalar düşmeli")
+
+    def test_katalog_buyuk_pencerede_tam_kalir(self):
+        coder = self._coder(200_000)
+        katalog = coder.ctx.skills.catalog(coder.katalog_butcesi)
+        if coder.ctx.skills.skills:
+            self.assertIn("\n- ", katalog, "büyük pencerede katalog kısılmamalı")
+
+    def test_katalog_butce_sifirsa_bosalir(self):
+        from aider.agent.skills import SkillLibrary
+
+        kutuphane = SkillLibrary([])
+        kutuphane.load()
+        if kutuphane.skills:
+            self.assertEqual(kutuphane.catalog(1), "")
+
+
+class TestReadSayfalama(unittest.TestCase):
+    """Büyük dosya bağlama sığmadığında model devamı nereden isteyeceğini bilmeli."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.prev = os.getcwd()
+        os.chdir(self.root)
+        self.dosya = self.root / "envanter.txt"
+        self.dosya.write_text(
+            "\n".join(
+                f"srvhost{i:04d}.kurum.local  10.13.{i // 256}.{i % 256}" for i in range(800)
+            ),
+            encoding="utf-8",
+        )
+
+    def tearDown(self):
+        os.chdir(self.prev)
+        self.tmp.cleanup()
+
+    def _ctx(self, pencere=16384):
+        ctx = make_ctx(self.root)
+        ctx.coder.main_model.info = {"max_input_tokens": pencere}
+        return ctx
+
+    def test_sayfa_butceyi_asmaz(self):
+        from aider.agent.tools import ReadTool, cikti_siniri
+
+        ctx = self._ctx()
+        sonuc = ReadTool().run(ctx, "envanter.txt")
+        self.assertLessEqual(len(sonuc), cikti_siniri(ctx))
+
+    def test_devam_offseti_yaziliyor(self):
+        from aider.agent.tools import ReadTool
+
+        sonuc = ReadTool().run(self._ctx(), "envanter.txt")
+        self.assertIn("offset=", sonuc.splitlines()[0])
+
+    def test_sayfalar_dosyanin_tamamini_kapsar(self):
+        from aider.agent.tools import ReadTool
+
+        ctx = self._ctx()
+        offset, gorulen, sayfa = 1, 0, 0
+        while offset and sayfa < 30:
+            sayfa += 1
+            sonuc = ReadTool().run(ctx, "envanter.txt", offset=offset)
+            bas = sonuc.splitlines()[0]
+            aralik = bas.split("satır ")[1].split(",")[0]
+            ilk, son = (int(x) for x in aralik.split("-"))
+            self.assertEqual(ilk, offset, "sayfalar arasında boşluk var")
+            gorulen = son
+            offset = int(bas.split("offset=")[1].rstrip(")")) if "offset=" in bas else None
+        self.assertEqual(gorulen, 800, "dosyanın tamamı okunamadı")
+
+    def test_sigan_dosya_tek_sayfada_biter(self):
+        from aider.agent.tools import ReadTool
+
+        (self.root / "kucuk.txt").write_text("\n".join(f"satır {i}" for i in range(50)))
+        bas = ReadTool().run(self._ctx(), "kucuk.txt").splitlines()[0]
+        self.assertNotIn("offset=", bas)
+        self.assertIn("satır 1-50", bas)
+
+    def test_buyuk_pencere_daha_cok_satir_okur(self):
+        from aider.agent.tools import ReadTool
+
+        def satir_sayisi(pencere):
+            bas = ReadTool().run(self._ctx(pencere), "envanter.txt").splitlines()[0]
+            ilk, son = (int(x) for x in bas.split("satır ")[1].split(",")[0].split("-"))
+            return son - ilk + 1
+
+        self.assertGreater(satir_sayisi(200_000), satir_sayisi(16384))

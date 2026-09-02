@@ -22,7 +22,16 @@ DEFAULT_READ_LIMIT = 2000
 # 30.000 sınırının altında kaldığı için OLDUĞU GİBİ geçiyor. 8k pencereli bir
 # modelde tek bir komut çıktısı bağlamın tamamını yiyor ve model boş dönüyor.
 CIKTI_BAGLAM_PAYI = 0.25
-KARAKTER_BASINA_TOKEN = 4
+# Karakter başına token. Dört, İngilizce düz metin için doğru; bu fork'un
+# çalıştığı içerik için değil. Ölçüldü (gpt-4o tokenizer): Türkçe sistem
+# promptu 2,70 kar/token, sunucu envanteri gibi yapılı metin 2,02. Dört
+# kullanmak bütçeleri bir buçuk-iki kat fazla açıyordu — 16k pencereli bir
+# modelde "penceremin çeyreği" diye ayrılan yer gerçekte yarısını yiyordu.
+#
+# En kötü ölçüm seçildi: bu sabitin yönettiği yerin büyük kısmı araç çıktısı,
+# yani log ve envanter gibi kötü tokenlaşan metin. Fazla ihtiyatlı olmak biraz
+# yer israfı; iyimser olmak modelin ortada kalması.
+KARAKTER_BASINA_TOKEN = 2.0
 
 
 def cikti_siniri(ctx):
@@ -39,7 +48,7 @@ def cikti_siniri(ctx):
         pencere = None
     if not pencere:
         return MAX_OUTPUT_CHARS
-    pay = int(pencere * CIKTI_BAGLAM_PAYI) * KARAKTER_BASINA_TOKEN
+    pay = int(pencere * CIKTI_BAGLAM_PAYI * KARAKTER_BASINA_TOKEN)
     return max(2_000, min(MAX_OUTPUT_CHARS, pay))
 
 
@@ -144,8 +153,28 @@ class ReadTool(PathTool):
         if not chunk:
             return f"(offset {start}, dosyada yalnızca {len(lines)} satır var)"
 
+        # Sayfalama bütçeye göre, satır sayısına göre değil. Eskiden 2000
+        # satır okunup sonuç ortadan kırpılıyordu: model dosyanın yarısını
+        # görüyor ama kalanını nereden isteyeceğini bilmiyordu. 16k pencereli
+        # bir modelde 800 satırlık bir envanter tek seferde okunamaz; okunması
+        # da gerekmiyor, yeter ki nereden devam edileceği yazsın.
+        butce = cikti_siniri(ctx)
         width = len(str(start + len(chunk) - 1))
-        body = "\n".join(f"{str(start + i).rjust(width)}\t{line}" for i, line in enumerate(chunk))
+        numarali = [f"{str(start + i).rjust(width)}\t{line}" for i, line in enumerate(chunk)]
+
+        # Başlık için pay bırak; bütçenin tamamını gövdeye vermek başlığı
+        # kırptırıyor ve devam bilgisi kayboluyor.
+        govde_butcesi = max(500, butce - 200)
+        sigan, uzunluk = [], 0
+        for satir in numarali:
+            if sigan and uzunluk + len(satir) + 1 > govde_butcesi:
+                break
+            sigan.append(satir)
+            uzunluk += len(satir) + 1
+
+        kesildi = len(sigan) < len(chunk)
+        body = "\n".join(sigan)
+        chunk = chunk[: len(sigan)]
 
         # DİKKAT: okunan dosya aider'ın abs_fnames listesine EKLENMEZ.
         # Eklenirse dosyanın tam içeriği bundan sonraki HER isteğe yeniden
@@ -155,7 +184,13 @@ class ReadTool(PathTool):
 
         end = start + len(chunk) - 1
         header = f"{p} (satır {start}-{end}, toplam {len(lines)})"
-        return _truncate(f"{header}\n{body}", cikti_siniri(ctx))
+        if end < len(lines):
+            # Devam offset'ini AÇIKÇA yaz. "kırpıldı" demek yetmiyor: model
+            # kalanı isteyeceği yeri kendi hesaplamak zorunda kalıyor ve
+            # küçük modeller bunu yanlış yapıyor.
+            neden = "bağlama sığmadı" if kesildi else "limit"
+            header += f" — {neden}; devamı için Read(offset={end + 1})"
+        return f"{header}\n{body}"
 
 
 class WriteTool(PathTool):
