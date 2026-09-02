@@ -178,8 +178,13 @@ birleştirilemiyorlar. Ama tek dizinde toplanabiliyorlar: conf dosyası
 ikisi de `~/.aider/` altında. `~/.aider.conf.yml` yerinde kalmak zorunda —
 aider'ın kendiliğinden bulduğu giriş noktası orası.
 
-Eski konumdaki (`~/.aider.model.*`) tanımlar taşınıyor ve kullanıcı eski
-dosyaları silebileceği konusunda uyarılıyor.
+Eski konumdaki (`~/.aider.model.*`) tanımlar yeni dosyaya taşınıyor.
+**Eski dosya silinmedikçe okunmaya devam ediyor** — `generate_search_path_list`
+varsayılan adı her zaman arama listesine koyuyor. Zarar vermiyor çünkü liste
+ters çevriliyor ve conf'un gösterdiği dosya en sona, yani üste düşüyor; ama
+"artık okunmuyor" demek yanlış olur. `TestAyarDosyasiSirasi` bu sırayı koruyor:
+sıra bozulursa `/model-ekle` ile tanımlanan model sessizce eski ayarlarla
+çalışır.
 
 ## Beceriler
 

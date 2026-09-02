@@ -379,8 +379,15 @@ def run_setup(io, home=None):
     meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     written.append(meta_path)
 
+    # DİKKAT: eski dosya "artık okunmuyor" DEĞİL. main.generate_search_path_list
+    # varsayılan adı her zaman arama listesine koyuyor, yani ~/.aider.model.*
+    # hâlâ yükleniyor. Sıra listeyi ters çevirdiği için conf'un gösterdiği
+    # dosya EN SONA düşüyor ve aynı model adı için eskisini eziyor — ama yalnızca
+    # eskisinde tanımlı başka bir model varsa o hâlâ geçerli.
     for eski in (eski_settings, eski_meta):
         if eski.is_file():
-            io.tool_warning(f"Artık okunmuyor (içeriği taşındı), silebilirsin: {eski}")
+            io.tool_warning(
+                f"Eski dosya hâlâ okunuyor, yenisi onu eziyor; içeriği taşındı: {eski}"
+            )
 
     return model_name, written

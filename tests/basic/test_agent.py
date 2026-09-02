@@ -1370,6 +1370,42 @@ class TestModelSetup(unittest.TestCase):
         self.assertEqual(self._meta()[name]["max_input_tokens"], 5000)
 
 
+class TestAyarDosyasiSirasi(unittest.TestCase):
+    """~/.aider/ altındaki dosya ev dizinindeki eskisini ezmeli.
+
+    generate_search_path_list varsayılan adı HER ZAMAN listeye koyuyor, yani
+    eski ~/.aider.model.settings.yml silinmedikçe okunmaya devam ediyor.
+    Belirleyici olan sıra: liste ters çevrildiği için conf'un gösterdiği dosya
+    en sona düşüyor ve register_models sonrakini kazandırıyor. Bu sıra bozulursa
+    /model-ekle ile tanımlanan model sessizce eski ayarlarla çalışır.
+    """
+
+    def test_conf_gosterdigi_dosya_en_sonda(self):
+        from aider.main import generate_search_path_list
+
+        yollar = [
+            str(y)
+            for y in generate_search_path_list(
+                ".aider.model.settings.yml", "/tmp/repo", "/root/.aider/model.settings.yml"
+            )
+        ]
+        self.assertTrue(yollar[-1].endswith("/.aider/model.settings.yml"), yollar)
+
+    def test_ev_dizinindeki_eski_ad_hala_aranıyor(self):
+        from aider.main import generate_search_path_list
+
+        yollar = [
+            str(y)
+            for y in generate_search_path_list(
+                ".aider.model.settings.yml", None, "/root/.aider/model.settings.yml"
+            )
+        ]
+        self.assertTrue(
+            any(y.endswith("/.aider.model.settings.yml") for y in yollar),
+            "eski ad listeden düşerse kullanıcıya 'silebilirsin' demek yanlış olur",
+        )
+
+
 class TestTabanAdresi(unittest.TestCase):
     """Kullanıcı tarayıcıdan ne yapıştırırsa yapıştırsın çalışmalı."""
 
