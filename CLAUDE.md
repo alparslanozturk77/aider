@@ -64,6 +64,33 @@ değiştirmek zorunda kalırsan yamayı en küçük blokta tut ve nedenini yorum
 En kritik olanı `models.py`: upstream `tool_choice`'u **tek bir fonksiyona
 zorluyordu**, bu da agentic döngüyü imkânsız kılıyor.
 
+## Modelsiz uçtan uca sınama
+
+`scripts/sahte_endpoint.py` OpenAI uyumlu bir sahte sunucu. Agent döngüsünün
+doğruluğu modelin zekâsına bağlı değil: araçlar çalışıyor mu, `tool_calls`
+yanıtsız kalıyor mu, istek pencereye sığıyor mu — hiçbiri için gerçek model
+gerekmiyor, ama kullanıcının fiilen çarptığı hatalar bunlar.
+
+Sunucu senaryodaki yanıtları sırayla döndürür **ve gelen isteği denetler**:
+yanıtsız `tool_call`, eşleşmeyen `tool` yanıtı, pencereyi aşan istek. Üçüncüsü
+srvsatellite'te yaşananın ta kendisi (16385 token / sınır 16384). Aşılırsa
+gerçek endpoint gibi 400 döner.
+
+Akış (SSE) destekliyor ve bu önemli: aider varsayılan olarak `stream=true`
+gönderiyor, yani üretimde çalışan kod yolu `_consume_stream`. Yalnızca akışsız
+sınamak, asıl yolu hiç sınamamak demek.
+
+```bash
+venv/bin/python scripts/sahte_endpoint.py --port 8000 --pencere 16384 \
+  --senaryo 'Read:{"file_path":"envanter.ini"} | metin:Okudum.' &
+aider --agent --model openai/sahte-model --openai-api-base http://127.0.0.1:8000/v1
+```
+
+skyup'ta (AlmaLinux 10, Python 3.12) 800 satırlık envanterle çalıştırıldı.
+Beş ardışık okuma isteği 4.299 → 8.583 → 12.884 token büyüttü, sonra kırpma
+devreye girip 13.252 → 13.632 → 14.023'te tuttu. Altı isteğin hiçbiri 16.384'ü
+aşmadı, hiçbirinde yetim `tool_call` çıkmadı ve iş yarıda kalmadı.
+
 ## Komutlar
 
 ```bash

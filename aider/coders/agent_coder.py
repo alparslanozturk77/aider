@@ -507,6 +507,15 @@ class AgentCoder(Coder):
         if self.aider_edited_files is None:
             self.aider_edited_files = set()
 
+        # usage_report'u upstream'in send_message'ı kuruyor ve bu coder onu
+        # tamamen değiştiriyor. Akış kapalıyken (--no-stream) maliyet hesabı
+        # hiç çalışmıyor, alan hiç var olmuyor ve tur sonundaki
+        # show_usage_report() AttributeError ile düşüyordu. skyup'ta gerçek
+        # çalıştırmada yakalandı; birim testleri döngüyü sonuna kadar
+        # götürmediği için görünmüyordu.
+        if not hasattr(self, "usage_report"):
+            self.usage_report = None
+
         self.cur_messages += [dict(role="user", content=inp)]
         self._oto_sikistir()
 

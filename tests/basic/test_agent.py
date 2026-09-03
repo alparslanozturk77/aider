@@ -1450,6 +1450,50 @@ class TestBaglamCikmazi(unittest.TestCase):
         self.assertEqual([str(m.get("content") or "") for m in working], onceki)
 
 
+class TestTurSonuKazasi(unittest.TestCase):
+    """Tur sonu, hiç başarılı tamamlama olmadan da düşmemeli.
+
+    skyup'ta gerçek çalıştırmada yakalandı: --no-stream ile maliyet hesabı hiç
+    çalışmıyor, usage_report alanı hiç var olmuyor ve show_usage_report()
+    AttributeError veriyordu. Alanı upstream'in send_message'ı kuruyor, bu
+    coder onu tamamen değiştiriyor.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.prev = os.getcwd()
+        os.chdir(self.tmp.name)
+
+    def tearDown(self):
+        os.chdir(self.prev)
+        self.tmp.cleanup()
+
+    def _coder(self):
+        from aider.coders import Coder
+        from aider.io import InputOutput
+        from aider.models import Model
+
+        return Coder.create(
+            main_model=Model("gpt-4o"),
+            edit_format="agent",
+            io=InputOutput(yes=True, pretty=False, fancy_input=False),
+            fnames=[],
+            use_git=False,
+            stream=False,
+        )
+
+    def test_bos_yanitta_tur_sonu_duşmuyor(self):
+        coder = self._coder()
+        with patch.object(coder, "_one_turn", return_value=("", None)):
+            list(coder.send_message("selam"))
+        self.assertIsNone(coder.usage_report)
+
+    def test_ilk_istek_patlarsa_tur_sonu_duşmuyor(self):
+        coder = self._coder()
+        with patch.object(coder, "_one_turn", side_effect=RuntimeError("endpoint yok")):
+            list(coder.send_message("selam"))
+
+
 class TestSemaButcesi(unittest.TestCase):
     """MCP araçları dar pencerede şema bütçesini patlatmamalı.
 
