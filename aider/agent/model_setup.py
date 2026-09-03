@@ -310,11 +310,21 @@ def run_setup(io, home=None):
 
     # Pencere endpoint'ten okunabildiyse varsayılan o olsun; kullanıcı yine
     # değiştirebilir.
+    # Endpoint pencereyi bildirdiyse sormanın anlamı yok: /v1/models zaten
+    # modelin özelliklerini veriyor ve kullanıcının bildiği bir şey değil.
+    # Azami çıktı yanıtta gelmiyor; pencereden türetiliyor. Dörtte bir,
+    # yapılacak iş için girdiye yer bırakan güvenli bir oran.
     bulunan = _pencere_bul(kayit) if kayit else None
     if bulunan:
-        io.tool_output(f"Bağlam penceresi endpoint'ten okundu: {bulunan}")
-    context = _ask_int(io, "Bağlam penceresi (token)", bulunan or DEFAULT_CONTEXT)
-    max_output = _ask_int(io, "Azami çıktı (token)", DEFAULT_MAX_OUTPUT)
+        context = bulunan
+        max_output = min(DEFAULT_MAX_OUTPUT, max(1024, context // 4))
+        io.tool_output(
+            f"Bağlam penceresi endpoint'ten okundu: {context:,}"
+            f" (azami çıktı {max_output:,} olarak ayarlandı)"
+        )
+    else:
+        context = _ask_int(io, "Bağlam penceresi (token)", DEFAULT_CONTEXT)
+        max_output = _ask_int(io, "Azami çıktı (token)", DEFAULT_MAX_OUTPUT)
 
     _arac_destegini_bildir(io, api_base, api_key, raw_name)
 

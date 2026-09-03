@@ -37,6 +37,8 @@ aider/agent/
   model_setup.py  /model-ekle akışı
   oturum.py       Oturum kaydı (JSONL) ve --continue ile geri yükleme
   sikistirma.py   Bağlam özeti (/ozet) ve otomatik sıkıştırma
+  glyph.py        Terminal Unicode taşımıyorsa ASCII'ye düşme
+  yapistirma.py   Uzun yapıştırmayı prompt'ta yer tutucuya indirme
 
 aider/coders/
   agent_coder.py     Araç döngüsü
@@ -54,7 +56,7 @@ değiştirmek zorunda kalırsan yamayı en küçük blokta tut ve nedenini yorum
 | `aider/coders/__init__.py` | `AgentCoder` kaydı |
 | `aider/args.py` | `--agent`, `--plan`, `--auto`, `--permission-mode`, `--max-tool-iterations`, `--offline`, `--auto-skills`, `--auto-compact`, `--continue` |
 | `aider/main.py` | Agent kwarg'ları yalnızca agent coder'a; repo map agent modunda kapalı; `--offline` zorlaması; coder değişiminde agent kancalarının bırakılması |
-| `aider/io.py` | Mod göstergesi kancaları ve `shift+tab` |
+| `aider/io.py` | Mod göstergesi kancaları, `shift+tab`, çıktı ASCII süzgeci, yapıştırma yer tutucusu |
 | `aider/commands.py` | On dört slash komutu; `/voice` çevrimdışı modda kapalı |
 | `.gitignore` | `.env` ve `.mcp.json` ignore |
 | `README.md` | Fork'un kendi ön yüzü; upstream'inki `ORIJINAL-README.md` |
@@ -255,6 +257,41 @@ sessiz: `aider/voice.py` model adını `whisper-1` olarak sabit yazıyor ve
 ama verilmiyor. Dolayısıyla `OPENAI_API_BASE` boşsa **ses kaydı
 `api.openai.com`'a gider**. Ayrıntı ve kontrol yordamı `AGENT.md`'de.
 
+## Terminal kodlaması
+
+Kurum terminalleri her zaman UTF-8 değil ve tek bir karakter satırı bozuyor:
+kullanıcı `→ Grep(...)` yerine `?? Grep(...)`, prompt'ta da mod işareti yerine
+boş kutu görüyor.
+
+İki ayrı sorun var ve karıştırılmamalı. Birincisi kodlama: `LANG=C` ya da
+tanımsız yerel ayar. `aider/agent/glyph.py` bunu sezip metni ASCII'ye çeviriyor
+— Türkçe harfler soru işaretine değil, harf çevirisine gidiyor (`sonuç` →
+`sonuc`), yoksa metin okunmaz oluyor. Süzgeç `io.py`'de, çıkış noktasında:
+agent katmanındaki otuz ayrı çağrıyı tek tek sarmalamak yerine.
+
+İkincisi font: yerel ayar UTF-8 dese bile terminalin fontunda glyph
+olmayabiliyor ve sezgi bunu göremez. Bu yüzden mod işaretleri Claude Code'un
+kullandığı U+23F5/U+23F8'den Geometric Shapes bloğuna (`▶`, `▮▮`) taşındı —
+kutu çizgisi olan hemen her fontta var. Yine de bozuksa iki yönlü elle anahtar
+var: `AIDER_ASCII=1` ve `AIDER_UNICODE=1`.
+
+Yerel ayar tanımsızsa artık ASCII'ye düşülüyor. Eskiden "karar veremiyorum"
+diye Unicode basılıyordu; `LANG`'siz bir ssh oturumu genellikle UTF-8 değil.
+
+## Yapıştırma
+
+300 satırlık bir log yapıştırıldığında prompt o 300 satırı çiziyor, ekran
+kayıyor ve kullanıcı ne yazdığını göremiyor. `aider/agent/yapistirma.py`
+uzun yapıştırmayı yer tutucuya indiriyor, gönderirken gerçek metni geri
+koyuyor — modele giden şey değişmiyor.
+
+Yer tutucu istatistik taşıyor: `[#1 yapıştırıldı: 120 satır, 5.789 karakter,
+~2.894 token]`. Token tahmini dar pencerede işe yarıyor; göndermeden önce
+görmek, sonradan bağlam hatası almaktan iyi.
+
+Kısa yapıştırma olduğu gibi giriyor (eşik: 4 satır ya da 400 karakter). Yer
+tutucusu bozulan metin sessizce kaybolmuyor, olduğu gibi gidiyor.
+
 ## Mod göstergesi
 
 Mevcut izin modu prompt'un içinde durur:
@@ -401,6 +438,15 @@ Son adımın çıktısını kısaltmak, işi yarıda bırakmaktan iyidir; kullan
 uyarıda hangisinin olduğunu görüyor. `TestBaglamCikmazi` senaryoyu birebir
 kuruyor.
 
+**Son sözü tokenizer söylüyor.** Karakter/token oranı bir tahmin ve sınıra
+yakınken tutmuyor. srvsatellite'te ölçüldü: istek **16385 token**'la
+reddedildi, modelin sınırı 16384 — bir token yüzünden iş yarıda kaldı.
+Karakter kırpmasından sonra `_token_ile_dogrula` gerçek sayımla bakıyor ve
+gerekirse en büyük araç çıktısını yarılamayı sürdürüyor. Karakter hesabı
+"sığıyor" dese bile bu kontrol atlanmıyor: kötü tokenlaşan çıktıda 27.693
+karakter sınırın altında ama 15.293 token tavanın üstünde. Sayım
+yapılamıyorsa (özel endpoint'lerde olabiliyor) iş durdurulmuyor.
+
 **Uzun oturumlar özetlenerek sıkıştırılıyor.** `_baglami_toparla` yalnızca
 tek bir mesajın araç döngüsü içinde çalışıyordu; turlar arasında biriken
 geçmişe kimse dokunmuyordu. Aider'da o işi `move_back_cur_messages` yapar
@@ -415,6 +461,12 @@ korur), pencere dolmaya yaklaşınca kendiliğinden de tetiklenir;
 
 Veri kaybı yok: özet yalnızca modele giden bağlamı değiştirir, oturumun tam
 kaydı `.aider/sessions/` altındaki JSONL'de durmaya devam eder.
+
+Özetleme, ayrı bir zayıf model tanımlıysa (`--weak-model`) oraya gidiyor:
+özet çıkarmak metin sıkıştırma işi, asıl modelin muhakemesine ihtiyacı yok.
+Dökümün bütçesi de **özetleyen** modelin penceresinden hesaplanıyor. Sabit
+60.000 karakterlik tavan 16k pencereli bir modelde 20.800 token'lık istek
+üretiyordu — `/ozet` tam da kurtarmaya çalıştığı modelde patlıyordu.
 
 İki tuzağı var, ikisi de sınanıyor. Kesme noktası her zaman bir `user`
 mesajına hizalanıyor — ortada kalan bir `tool_calls` endpoint tarafından

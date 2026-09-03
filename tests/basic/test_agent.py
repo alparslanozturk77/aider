@@ -1450,6 +1450,105 @@ class TestBaglamCikmazi(unittest.TestCase):
         self.assertEqual([str(m.get("content") or "") for m in working], onceki)
 
 
+class TestTokenKapisi(unittest.TestCase):
+    """Karakter hesabı "sığıyor" dese bile tokenizer son sözü söylemeli.
+
+    srvsatellite'te ölçüldü: istek 16385 token'la reddedildi, modelin sınırı
+    16384. Bir token yüzünden iş yarıda kaldı. Karakter/token oranı bir tahmin
+    ve sınıra yakınken tutmuyor — özellikle sha256/uuid gibi kötü tokenlaşan
+    çıktıda.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.prev = os.getcwd()
+        os.chdir(self.tmp.name)
+
+    def tearDown(self):
+        os.chdir(self.prev)
+        self.tmp.cleanup()
+
+    def _coder(self, pencere=16384):
+        from aider.coders import Coder
+        from aider.io import InputOutput
+        from aider.models import Model
+
+        model = Model("gpt-4o")
+        model.info = dict(model.info or {})
+        model.info["max_input_tokens"] = pencere
+        return Coder.create(
+            main_model=model,
+            edit_format="agent",
+            io=InputOutput(yes=True, pretty=False, fancy_input=False),
+            fnames=[],
+            use_git=False,
+            stream=False,
+        )
+
+    def _kotu_tokenlasan(self, coder, tur=3):
+        import random
+
+        random.seed(7)
+        cop = "\n".join(
+            "".join(random.choice("0123456789abcdef") for _ in range(64)) for _ in range(126)
+        )
+        working = [
+            dict(role="system", content=coder.fmt_system_prompt(coder.gpt_prompts.main_system)),
+            dict(role="user", content="paket imzalarını doğrula"),
+        ]
+        for i in range(tur):
+            working.append(
+                dict(
+                    role="assistant",
+                    content="",
+                    tool_calls=[
+                        dict(id=f"c{i}", type="function", function=dict(name="Ssh", arguments="{}"))
+                    ],
+                )
+            )
+            working.append(dict(role="tool", tool_call_id=f"c{i}", name="Ssh", content=cop))
+        return working
+
+    def test_karakter_hesabi_yaniliyorsa_token_yakaliyor(self):
+        coder = self._coder()
+        working = self._kotu_tokenlasan(coder)
+        karakter = sum(len(str(m.get("content") or "")) for m in working)
+        self.assertLessEqual(karakter, coder._baglam_siniri(), "senaryo kurulamadı")
+        self.assertGreater(coder.main_model.token_count(working), coder._token_tavani())
+
+        self.assertTrue(coder._baglami_toparla(working))
+        self.assertLessEqual(coder.main_model.token_count(working), coder._token_tavani())
+
+    def test_token_sayilamazsa_is_durmuyor(self):
+        # Özel endpoint'lerde sayım başarısız olabiliyor. Sayamadığı için işi
+        # durdurmak yanlış olur; karakter hesabına güvenilir.
+        coder = self._coder()
+        working = self._kotu_tokenlasan(coder)
+        with patch.object(coder.main_model, "token_count", side_effect=Exception("sayamadı")):
+            self.assertTrue(coder._baglami_toparla(working))
+
+    def test_sifir_sayim_engel_degil(self):
+        coder = self._coder()
+        working = self._kotu_tokenlasan(coder)
+        with patch.object(coder.main_model, "token_count", return_value=0):
+            self.assertTrue(coder._baglami_toparla(working))
+
+    def test_kirpmada_baslik_birikmiyor(self):
+        coder = self._coder()
+        working = self._kotu_tokenlasan(coder)
+        coder._baglami_toparla(working)
+        for msg in working:
+            icerik = str(msg.get("content") or "")
+            self.assertLessEqual(icerik.count("bağlam için kısaltıldı"), 1, icerik[:120])
+
+    def test_arac_cifti_bozulmuyor(self):
+        coder = self._coder()
+        working = self._kotu_tokenlasan(coder)
+        onceki = [(m.get("role"), m.get("tool_call_id")) for m in working]
+        coder._baglami_toparla(working)
+        self.assertEqual([(m.get("role"), m.get("tool_call_id")) for m in working], onceki)
+
+
 class TestIkinciModel(unittest.TestCase):
     """İkinci model başka bir sunucudaysa istek doğru yere gitmeli.
 
@@ -3521,9 +3620,13 @@ class TestBaglamToparlama(unittest.TestCase):
         self.assertLessEqual(toplam, 15_000)
 
     def test_yer_acilamazsa_false_doner(self):
+        # Hem karakter hem token sınırı imkânsız olduğunda False dönmeli.
+        # Yalnızca karakter sınırını kısmak yetmiyor: token kapısı gerçek
+        # pencereye bakıyor ve "aslında sığıyor" diyerek devam ettiriyor.
         gecmis = self._gecmis(tur=2, boyut=50_000)
         with patch.object(self.coder, "_baglam_siniri", return_value=100):
-            self.assertFalse(self.coder._baglami_toparla(gecmis))
+            with patch.object(self.coder, "_token_tavani", return_value=10):
+                self.assertFalse(self.coder._baglami_toparla(gecmis))
 
     def test_pencere_bilinmiyorsa_dokunulmaz(self):
         gecmis = self._gecmis()
@@ -4100,7 +4203,9 @@ class TestSikistirmaCoder(unittest.TestCase):
         self._doldur(coder)
         onceki = sikistirma.toplam_karakter(coder.done_messages + coder.cur_messages)
 
-        coder.main_model.simple_send_with_retries = MagicMock(return_value="kısa özet")
+        # Özetleme zayıf modele gidiyor; ana modeli yamalamak yetmez ve test
+        # gerçekten ağa çıkar.
+        coder._ozet_modeli().simple_send_with_retries = MagicMock(return_value="kısa özet")
         kes = coder.sikistir()
 
         self.assertGreater(kes, 0)
@@ -4115,7 +4220,7 @@ class TestSikistirmaCoder(unittest.TestCase):
         self._doldur(coder)
         onceki = list(coder.cur_messages)
 
-        coder.main_model.simple_send_with_retries = MagicMock(return_value="  ")
+        coder._ozet_modeli().simple_send_with_retries = MagicMock(return_value="  ")
         self.assertEqual(coder.sikistir(), 0)
         self.assertEqual(coder.cur_messages, onceki)
 
@@ -4124,7 +4229,7 @@ class TestSikistirmaCoder(unittest.TestCase):
         self._doldur(coder)
         onceki = list(coder.cur_messages)
 
-        coder.main_model.simple_send_with_retries = MagicMock(side_effect=RuntimeError("bağlantı"))
+        coder._ozet_modeli().simple_send_with_retries = MagicMock(side_effect=RuntimeError("x"))
         self.assertEqual(coder.sikistir(), 0)
         self.assertEqual(coder.cur_messages, onceki)
 
@@ -4132,28 +4237,31 @@ class TestSikistirmaCoder(unittest.TestCase):
         coder = self._coder()
         self._doldur(coder, tur=8)
         coder._baglam_siniri = lambda: 100
-        coder.main_model.simple_send_with_retries = MagicMock(return_value="özet")
+        ozetleyici = coder._ozet_modeli()
+        ozetleyici.simple_send_with_retries = MagicMock(return_value="özet")
 
         coder._oto_sikistir()
-        coder.main_model.simple_send_with_retries.assert_called_once()
+        ozetleyici.simple_send_with_retries.assert_called_once()
 
     def test_oto_sikistirma_kapatilabilir(self):
         coder = self._coder(auto_compact=False)
         self._doldur(coder, tur=8)
         coder._baglam_siniri = lambda: 100
-        coder.main_model.simple_send_with_retries = MagicMock(return_value="özet")
+        ozetleyici = coder._ozet_modeli()
+        ozetleyici.simple_send_with_retries = MagicMock(return_value="özet")
 
         coder._oto_sikistir()
-        coder.main_model.simple_send_with_retries.assert_not_called()
+        ozetleyici.simple_send_with_retries.assert_not_called()
 
     def test_sinir_asilmadan_tetiklenmez(self):
         coder = self._coder()
         self._doldur(coder, tur=2)
         coder._baglam_siniri = lambda: 10_000_000
-        coder.main_model.simple_send_with_retries = MagicMock(return_value="özet")
+        ozetleyici = coder._ozet_modeli()
+        ozetleyici.simple_send_with_retries = MagicMock(return_value="özet")
 
         coder._oto_sikistir()
-        coder.main_model.simple_send_with_retries.assert_not_called()
+        ozetleyici.simple_send_with_retries.assert_not_called()
 
 
 class TestKucukPencere(unittest.TestCase):
@@ -4292,3 +4400,107 @@ class TestReadSayfalama(unittest.TestCase):
             return son - ilk + 1
 
         self.assertGreater(satir_sayisi(200_000), satir_sayisi(16384))
+
+
+from aider.agent import glyph  # noqa: E402
+from aider.agent.yapistirma import YapistirmaDeposu  # noqa: E402
+
+
+class TestGlyphDusurme(unittest.TestCase):
+    """Terminal Unicode taşımıyorsa ekrana `??` değil sade karakter düşmeli."""
+
+    def setUp(self):
+        self.eski = {
+            ad: os.environ.pop(ad, None)
+            for ad in ("LC_ALL", "LC_CTYPE", "LANG", "AIDER_ASCII", "AIDER_UNICODE")
+        }
+
+    def tearDown(self):
+        for ad, deger in self.eski.items():
+            os.environ.pop(ad, None)
+            if deger is not None:
+                os.environ[ad] = deger
+
+    def test_utf8_yerelde_metne_dokunulmuyor(self):
+        os.environ["LANG"] = "tr_TR.UTF-8"
+        self.assertEqual(glyph.guvenli("▶ onay modu → x"), "▶ onay modu → x")
+
+    def test_lang_c_ise_asciiye_dusuyor(self):
+        os.environ["LANG"] = "C"
+        self.assertEqual(glyph.guvenli("▶ onay modu"), "> onay modu")
+
+    def test_yerel_tanimsizsa_asciiye_dusuyor(self):
+        # Eskiden "karar veremiyorum" diye Unicode basılıyordu; LANG'siz bir ssh
+        # oturumu genellikle UTF-8 değil ve kullanıcı `??` görüyordu.
+        self.assertEqual(glyph.guvenli("→ Grep(x)"), "-> Grep(x)")
+
+    def test_turkce_harfler_soru_isareti_olmuyor(self):
+        os.environ["LANG"] = "C"
+        self.assertEqual(glyph.guvenli("3 sonuç bulundu, İzin şart"), "3 sonuc bulundu, Izin sart")
+
+    def test_elle_anahtarlar_iki_yonlu(self):
+        os.environ["LANG"] = "tr_TR.UTF-8"
+        os.environ["AIDER_ASCII"] = "1"
+        self.assertEqual(glyph.guvenli("→"), "->")
+        del os.environ["AIDER_ASCII"]
+        os.environ["LANG"] = "C"
+        os.environ["AIDER_UNICODE"] = "1"
+        self.assertEqual(glyph.guvenli("→"), "→")
+
+    def test_mod_isaretleri_karsiliksiz_kalmiyor(self):
+        from aider.coders.agent_coder import AgentCoder
+
+        os.environ["LANG"] = "C"
+        for isaret, _ad, _renk in AgentCoder.MODE_LABELS.values():
+            cevrilmis = glyph.guvenli(isaret)
+            self.assertNotIn("?", cevrilmis, f"{isaret} için ASCII karşılığı yok")
+
+
+class TestYapistirma(unittest.TestCase):
+    """Uzun yapıştırma ekranda yer tutucu, modele giderken gerçek metin."""
+
+    def setUp(self):
+        self.depo = YapistirmaDeposu()
+        self.uzun = "\n".join(
+            f"drcc-app-{i:02d}.kurum.local ansible_host=10.13.4.{i}" for i in range(120)
+        )
+
+    def test_kisa_yapistirma_yer_tutucu_almiyor(self):
+        self.assertFalse(self.depo.uzun_mu("selam"))
+        self.assertFalse(self.depo.uzun_mu("iki\nsatır"))
+
+    def test_uzun_yapistirma_yer_tutucu_aliyor(self):
+        self.assertTrue(self.depo.uzun_mu(self.uzun))
+
+    def test_yer_tutucu_istatistik_tasiyor(self):
+        yer = self.depo.sakla(self.uzun)
+        self.assertIn("120 satır", yer)
+        self.assertIn("karakter", yer)
+        self.assertIn("token", yer)
+
+    def test_gonderirken_gercek_metin_geri_geliyor(self):
+        yer = self.depo.sakla(self.uzun)
+        satir = f"şu envanteri grupla: {yer} ve rapor ver"
+        acilmis = self.depo.ac(satir)
+        self.assertIn(self.uzun, acilmis)
+        self.assertNotIn(yer, acilmis)
+
+    def test_birden_cok_yapistirma_karismiyor(self):
+        a = self.depo.sakla(self.uzun)
+        b = self.depo.sakla(self.uzun.replace("drcc", "spl"))
+        acilmis = self.depo.ac(f"{a} ile {b} karşılaştır")
+        self.assertIn("drcc-app-00", acilmis)
+        self.assertIn("spl-app-00", acilmis)
+
+    def test_yer_tutucu_bozulursa_metin_kaybolmuyor(self):
+        # Kullanıcı satırı elle düzenleyip yer tutucuyu bozarsa metin sessizce
+        # kaybolmamalı; olduğu gibi gitmeli.
+        self.depo.sakla(self.uzun)
+        self.assertEqual(self.depo.ac("elle yazdım"), "elle yazdım")
+
+    def test_io_yapistirma_deposu_kuruyor(self):
+        from aider.io import InputOutput
+
+        io = InputOutput(yes=True, pretty=False, fancy_input=False)
+        self.assertTrue(hasattr(io, "yapistirma"))
+        self.assertEqual(io.yapistirma.ac("dokunulmamış"), "dokunulmamış")

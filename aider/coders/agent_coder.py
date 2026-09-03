@@ -6,7 +6,6 @@ kurar: model araç çağırır, sonucu görür, tekrar karar verir; iş bitene k
 """
 
 import json
-import sys
 
 from aider.agent.plan import PLAN_MODE_REMINDER, ExitPlanModeTool
 from aider.agent.mcp import MCPManager
@@ -23,6 +22,7 @@ from aider.agent.oturum import DEVAM_BUTCESI, SessionStore
 from aider.agent.permissions import MODE_ASK, MODE_AUTO, MODE_PLAN, load_permissions
 from aider.agent.registry import ToolContext, ToolRegistry
 from aider.agent import sikistirma
+from aider.agent.glyph import guvenli
 from aider.agent.skills import SkillLibrary, SkillTool, default_skill_roots
 from aider.agent.ssh_tool import SshTool
 from aider.agent.todo import TodoList, TodoWriteTool
@@ -89,6 +89,12 @@ KUCUK_PENCEREDE_KAPALI = ("Skill", "Hatirla", "TodoWrite")
 # Ölçüldü: tam katalog 9.838 karakter, 16k pencerede her istekte ~3.650
 # token. Karşılığı yok — beceri seçimi kodda yapılıyor, model bu listeden
 # seçmiyor. Bütçe yetmezse katalog önce adlara iner, sonra tümden düşer.
+# Özetlenecek dökümün, ÖZETLEYEN modelin penceresinden alabileceği pay.
+# Sabit 60.000 karakterlik tavan 16k pencereli bir modelde 20.800 token'lık
+# bir istek üretiyordu: /ozet tam da kurtarmaya çalıştığı modelde patlıyordu.
+# Kalan pay isteme ve üretilecek özete gidiyor.
+DOKUM_PAYI = 0.6
+
 KATALOG_PAYI = 0.05
 KATALOG_TAVANI = 12_000
 
@@ -115,6 +121,12 @@ KORUMA_KADEMELERI = (KORUNAN_SON_MESAJ, 2, 0)
 
 # Bundan kısa araç sonuçlarını kısaltmanın kazancı yok.
 KISALTMA_ESIGI = 400
+
+# Karakter hesabı ucuz ama sınıra yakınken yanılıyor. srvsatellite'te ölçüldü:
+# istek 16385 token'la reddedildi, modelin sınırı 16384 — bir token yüzünden iş
+# yarıda kaldı. Karakter kırpmasından sonra son sözü tokenizer söylüyor.
+TOKEN_KIRPMA_DENEMESI = 12
+TOKEN_KIRPMA_TABANI = 200
 
 
 class AgentCoder(Coder):
@@ -225,15 +237,15 @@ class AgentCoder(Coder):
         )
         return son
 
-    def _prompt_butcesi(self, pay, tavan):
-        """Sistem promptundaki bir bloğun karakter bütçesi.
+    def _prompt_butcesi(self, pay, tavan, model=None):
+        """Bir bloğun karakter bütçesi, modelin penceresine göre.
 
         Modelin penceresi bilinmiyorsa (özel endpoint'lerde sık) tavan
         kullanılır: tahmin edip çalışan bir kurulumu bozmaktansa eski
         davranışta kalmak yeğ.
         """
         try:
-            pencere = (self.main_model.info or {}).get("max_input_tokens")
+            pencere = ((model or self.main_model).info or {}).get("max_input_tokens")
         except Exception:
             pencere = None
         if not pencere:
@@ -247,13 +259,17 @@ class AgentCoder(Coder):
     # shift+tab bu sırayla dolaşır.
     MODE_CYCLE = (MODE_PLAN, MODE_ASK, MODE_AUTO)
 
-    # (işaret, ad, renk) — Claude Code'un durum satırına yakın kalsın diye
-    # chevron sayısı serbestlik derecesini anlatıyor: plan durakta, onay tek
-    # adım, oto serbest.
+    # (işaret, ad, renk) — chevron sayısı serbestlik derecesini anlatıyor:
+    # plan durakta, onay tek adım, oto serbest.
+    #
+    # Glyphler Geometric Shapes bloğundan (U+25B6, U+25AE). Claude Code'un
+    # kullandığı U+23F5/U+23F8 daha doğru duruyordu ama kurum terminallerinin
+    # fontunda yok: kullanıcı prompt'ta boş kutu görüyordu. Bu blok, kutu
+    # çizgisi olan hemen her fontta var.
     MODE_LABELS = {
-        MODE_PLAN: ("⏸", "plan modu", "ansiblue"),
-        MODE_ASK: ("⏵", "onay modu", "ansigreen"),
-        MODE_AUTO: ("⏵⏵", "oto mod", "ansiyellow"),
+        MODE_PLAN: ("▮▮", "plan modu", "ansiblue"),
+        MODE_ASK: ("▶", "onay modu", "ansigreen"),
+        MODE_AUTO: ("▶▶", "oto mod", "ansiyellow"),
     }
 
     # Terminal ya da font bu glyph'leri taşımıyorsa kullanılacak karşılıklar.
@@ -280,13 +296,9 @@ class AgentCoder(Coder):
         return f"{self._marker(mode, isaret)} {ad}"
 
     def _marker(self, mode, isaret):
-        """Glyph terminalin kodlamasında yoksa ASCII karşılığına düş."""
-        enc = getattr(sys.stdout, "encoding", None) or "utf-8"
-        try:
-            isaret.encode(enc)
-        except (UnicodeEncodeError, LookupError):
-            return self.ASCII_MARKERS[mode]
-        return isaret
+        """Glyph terminal taşımıyorsa ASCII karşılığına düş."""
+        cevrilmis = guvenli(isaret)
+        return isaret if cevrilmis == isaret else self.ASCII_MARKERS[mode]
 
     def cycle_mode(self):
         """shift+tab: plan → onay → oto → plan."""
@@ -621,6 +633,19 @@ class AgentCoder(Coder):
         self.io.tool_warning("Bağlam doluyor, geçmiş otomatik özetleniyor.")
         self.sikistir()
 
+    def _ozet_modeli(self):
+        """Özetleme hangi modelde yapılsın?
+
+        Özet çıkarmak bir metin sıkıştırma işi; asıl modelin muhakemesine
+        ihtiyacı yok. Ayrı bir zayıf model tanımlıysa (`--weak-model`) oraya
+        gidiyor. Kazanç iki yönlü: dökümün asıl modelin dar penceresine sığması
+        gerekmiyor, ve zayıf model daha büyük pencereli olabiliyor.
+        """
+        zayif = getattr(self.main_model, "weak_model", None)
+        if zayif is not None and zayif is not self.main_model:
+            return zayif
+        return self.main_model
+
     def sikistir(self, korunan_tur=sikistirma.KORUNAN_TUR):
         """Geçmişi özetle ve yerine koy; özetlenen mesaj sayısını döndür.
 
@@ -635,11 +660,14 @@ class AgentCoder(Coder):
             return 0
 
         onceki = sikistirma.toplam_karakter(mesajlar)
-        self.io.tool_output(f"{kes} mesaj özetleniyor…")
+        ozetleyici = self._ozet_modeli()
+        nerede = "" if ozetleyici is self.main_model else f" ({ozetleyici.name} ile)"
+        self.io.tool_output(f"{kes} mesaj özetleniyor{nerede}…")
 
+        butce = self._prompt_butcesi(DOKUM_PAYI, sikistirma.DOKUM_TAVANI, ozetleyici)
         try:
-            metin = self.main_model.simple_send_with_retries(
-                sikistirma.istem(sikistirma.dokum(mesajlar[:kes]))
+            metin = ozetleyici.simple_send_with_retries(
+                sikistirma.istem(sikistirma.dokum(mesajlar[:kes], tavan=butce))
             )
         except Exception as err:
             self.io.tool_error(f"Özetleme başarısız, geçmiş olduğu gibi bırakıldı: {err}")
@@ -676,14 +704,16 @@ class AgentCoder(Coder):
         bir sonraki turda ve --continue ile geri yüklemede yine yer yiyecekti.
         """
         sinir = self._baglam_siniri()
-        if not sinir:
-            return True
 
         def toplam():
             return sum(len(str(msg.get("content") or "")) for msg in working)
 
-        if toplam() <= sinir:
-            return True
+        # DİKKAT: karakter hesabı "sığıyor" dese bile token doğrulaması
+        # atlanmıyor. Erken dönmek tam da yakalanması gereken durumu
+        # kaçırıyordu: kötü tokenlaşan çıktıda 27.693 karakter sınırın altında
+        # ama 15.293 token tavanın üstünde.
+        if not sinir or toplam() <= sinir:
+            return self._token_ile_dogrula(working)
 
         kisaltilan = 0
         son_kademe = 0
@@ -711,7 +741,65 @@ class AgentCoder(Coder):
                 f"Bağlam doluyordu: {kisaltilan} araç çıktısı kısaltıldı{nere}."
             )
 
-        return toplam() <= sinir
+        return self._token_ile_dogrula(working)
+
+    def _token_tavani(self):
+        """Gerçek token cinsinden aşılmaması gereken sınır."""
+        try:
+            pencere = (self.main_model.info or {}).get("max_input_tokens")
+        except Exception:
+            return None
+        return int(pencere * DOLULUK_ESIGI) if pencere else None
+
+    def _en_buyugu_kirp(self, working):
+        """En büyük araç çıktısını yarıya indir; kırpılacak bir şey yoksa False."""
+        hedef, boy = None, 0
+        for msg in working:
+            if msg.get("role") != "tool":
+                continue
+            n = len(str(msg.get("content") or ""))
+            if n > boy:
+                hedef, boy = msg, n
+        if hedef is None or boy <= TOKEN_KIRPMA_TABANI:
+            return False
+
+        icerik = str(hedef["content"])
+        # Üst üste kırpmada başlık birikmesin.
+        if icerik.startswith("(araç çıktısı"):
+            icerik = icerik.split("\n", 1)[-1]
+        hedef["content"] = (
+            f"(araç çıktısı bağlam için kısaltıldı, {boy} karakterdi)\n"
+            + icerik[: len(icerik) // 2]
+        )
+        return True
+
+    def _token_ile_dogrula(self, working):
+        """Karakter kırpmasından sonra tokenizer'la doğrula, gerekirse kırpmayı sürdür.
+
+        Karakter/token oranı bir tahmin; sınıra yakınken tutmuyor. Sayım
+        yapılamıyorsa (özel endpoint'lerde olabiliyor) karakter hesabına
+        güvenip devam ediliyor — sayamadığı için işi durdurmak yanlış olur.
+        """
+        tavan = self._token_tavani()
+        if not tavan:
+            return True
+
+        for _ in range(TOKEN_KIRPMA_DENEMESI):
+            try:
+                sayim = self.main_model.token_count(working)
+            except Exception:
+                return True
+            if not sayim:
+                return True
+            if sayim <= tavan:
+                return True
+            if not self._en_buyugu_kirp(working):
+                return False
+
+        try:
+            return (self.main_model.token_count(working) or 0) <= tavan
+        except Exception:
+            return True
 
     def _one_turn(self, messages, tools):
         """Modele bir istek at, (metin, tool_calls) döndür."""
@@ -896,17 +984,8 @@ class AgentCoder(Coder):
         self.io.tool_output(f"  {self._ok()} {name}({detail})")
 
     def _ok(self):
-        """Araç çağrısı imi; terminal taşımıyorsa ASCII'ye düş.
-
-        Mod göstergesindeki glyph'lerle aynı sorun: kurum sunucularında
-        kodlama her zaman UTF-8 değil ve tek bir karakter satırı bozuyor.
-        """
-        enc = getattr(sys.stdout, "encoding", None) or "utf-8"
-        try:
-            "→".encode(enc)
-        except (UnicodeEncodeError, LookupError):
-            return "->"
-        return "→"
+        """Araç çağrısı imi; terminal taşımıyorsa ASCII'ye düş."""
+        return guvenli("→")
 
     def _finish_turn(self):
         """Tur sonunda aider'ın git/lint/test makinesini devreye sok."""

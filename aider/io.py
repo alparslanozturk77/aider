@@ -18,6 +18,9 @@ from prompt_toolkit.enums import EditingMode
 from prompt_toolkit.filters import Condition, is_searching
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.key_binding import KeyBindings
+
+from aider.agent.glyph import guvenli
+from aider.agent.yapistirma import YapistirmaDeposu
 from prompt_toolkit.key_binding.vi_state import InputMode
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.lexers import PygmentsLexer
@@ -341,6 +344,9 @@ class InputOutput:
         self.append_chat_history(f"\n# aider chat started at {current_time}\n\n")
 
         self.prompt_session = None
+        # Fork: uzun yapıştırma prompt'ta yer tutucuya iner, gönderirken
+        # gerçek metin geri konur. Modele giden şey değişmiyor.
+        self.yapistirma = YapistirmaDeposu()
         self.is_dumb_terminal = is_dumb_terminal()
 
         if self.is_dumb_terminal:
@@ -654,6 +660,21 @@ class InputOutput:
                 # In normal mode, Enter submits
                 event.current_buffer.validate_and_handle()
 
+        @kb.add(Keys.BracketedPaste)
+        def _(event):
+            """Uzun yapıştırmayı yer tutucuya indir.
+
+            Fork: 300 satırlık bir log yapıştırıldığında prompt o 300 satırı
+            çiziyor, ekran kayıyor ve kullanıcı ne yazdığını göremiyor.
+            Kısa yapıştırma olduğu gibi giriyor — yer tutucu kullanıcıyı
+            metninden ayırmaktan başka işe yaramaz.
+            """
+            veri = event.data
+            if self.yapistirma.uzun_mu(veri):
+                event.current_buffer.insert_text(self.yapistirma.sakla(veri))
+            else:
+                event.current_buffer.insert_text(veri)
+
         @kb.add("escape", "enter", eager=True, filter=~is_searching)  # This is Alt+Enter
         def _(event):
             "Handle Alt+Enter key press"
@@ -697,6 +718,9 @@ class InputOutput:
                     )
                 else:
                     line = input(show)
+
+                # Fork: yer tutucuların yerine gerçek metni koy.
+                line = self.yapistirma.ac(line)
 
                 # Check if we were interrupted by a file change
                 if self.interrupted:
@@ -1016,14 +1040,19 @@ class InputOutput:
             message = str(message).encode("ascii", errors="replace").decode("ascii")
             self.console.print(message, **style)
 
+    # Fork: kurum sunucularında terminal her zaman UTF-8 değil ve tek bir
+    # karakter satırı bozuyor ("-> Grep(...)" yerine "?? Grep(...)"). Süzgeç
+    # burada, çıkış noktasında: agent katmanındaki otuz ayrı çağrıyı tek tek
+    # sarmalamak yerine. Terminal Unicode taşıyorsa metne dokunulmuyor.
     def tool_error(self, message="", strip=True):
         self.num_error_outputs += 1
-        self._tool_message(message, strip, self.tool_error_color)
+        self._tool_message(guvenli(message), strip, self.tool_error_color)
 
     def tool_warning(self, message="", strip=True):
-        self._tool_message(message, strip, self.tool_warning_color)
+        self._tool_message(guvenli(message), strip, self.tool_warning_color)
 
     def tool_output(self, *messages, log_only=False, bold=False):
+        messages = tuple(guvenli(m) if isinstance(m, str) else m for m in messages)
         if messages:
             hist = " ".join(messages)
             hist = f"{hist.strip()}"
