@@ -42,21 +42,31 @@ işi bitirene kadar sürdürür.
 
 ```bash
 git clone -b claude-code-layer https://github.com/alparslanozturk77/aider.git
-cd aider && ./kur.sh
+cd aider
+python3.12 -m venv venv && source venv/bin/activate
+pip install .
 ```
 
 > Dal açıkça yazılıyor. Varsayılan dal zaten `claude-code-layer`, ama depoda
 > upstream aider'ı izleyen bir `main` dalı da var; oradan klonlarsan fork'un
-> hiçbir dosyası (`kur.sh` dahil) gelmez.
+> hiçbir dosyası gelmez.
+
+> Sanal ortam şart. Sistem Python'una kurmayı denersen RHEL 9+ reddeder
+> (`externally-managed-environment`); zorlarsan da yüz civarı bağımlılık
+> `dnf`'in kullandığı site-packages'a karışır.
+
+`pip install .` kopya kurar, yani `git pull` sonrası **yeniden kurmak
+gerekir**. Sık güncelleyeceksen `pip install -e .` kullan: kod doğrudan
+depodan okunur, pull yeter.
 
 **Çevrimdışı sunucu (RHEL 9 / 10)** — bağımlılıklar paketin içinde wheel
 olarak gelir, kurulum ağ istemez. [Sürüm sayfasından](https://github.com/alparslanozturk77/aider/releases)
 indir:
 
 ```bash
-tar -xzf aider-agent-0.1.0-rhel10-x86_64.tar.gz
-cd aider-agent-0.1.0 && ./cevrimdisi-kur.sh /opt/aider-agent
-# ya da:  dnf install ./aider-agent-0.1.0-1.el10.x86_64.rpm
+tar -xzf aider-agent-1.0.0-rhel10-x86_64.tar.gz
+cd aider-agent-1.0.0 && ./cevrimdisi-kur.sh /opt/aider-agent
+# ya da:  dnf install ./aider-agent-1.0.0-1.el10.x86_64.rpm
 ```
 
 RHEL 9'da önce `dnf install python3.12` gerekir (sistem Python'ı 3.9, aider
@@ -67,6 +77,12 @@ Derleme gerekmez. Sonra program içinden endpoint'i tanımla:
 ```
 /model-ekle
 ```
+
+Tek soru sorar: endpoint adresi. `/v1` yazmayı unutursan ekler; bağlam
+penceresini `/v1/models` yanıtından okuyabilirse onu da sormaz.
+
+Hava boşluklu sunucuda `~/.aider.conf.yml` dosyasına `offline: true` ekle —
+sürüm denetimi, analitik ve URL çekme kapanır. Ağa çıkabilen makinede ekleme.
 
 ## Beceriler
 
@@ -110,7 +126,7 @@ Yeni beceri: `/skills new <ad>`
 Sonrasında **zorunlu**:
 
 ```bash
-.venv/bin/python scripts/fork_dogrula.py
+venv/bin/python scripts/fork_dogrula.py
 ```
 
 Bu betik fork'un yedi dokunuş noktasının hâlâ *çalıştığını* davranışsal olarak

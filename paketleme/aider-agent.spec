@@ -12,7 +12,7 @@
 %global debug_package %{nil}
 
 Name:           aider-agent
-Version:        %{?surum}%{!?surum:0.1.0}
+Version:        %{?surum}%{!?surum:1.0.0}
 Release:        1%{?dist}
 Summary:        Sistem yönetimi ajanı — aider forku, kurum içi endpoint ile çalışır
 
