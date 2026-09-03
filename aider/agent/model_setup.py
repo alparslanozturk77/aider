@@ -348,20 +348,27 @@ def run_setup(io, home=None):
     if not isinstance(settings, list):
         settings = []
     settings = [s for s in settings if s.get("name") != model_name]
-    settings.append(
-        {
-            "name": model_name,
-            "edit_format": "agent",
-            # Agent modunda repo haritası kapalı: modelin Glob/Grep/Read'i var
-            # ve harita her isteğe yeniden gömülüyor.
-            "use_repo_map": False,
-            "use_temperature": 0,
-            "streaming": True,
-        }
-    )
-    settings_path.write_text(
-        yaml.safe_dump(settings, allow_unicode=True, sort_keys=False), encoding="utf-8"
-    )
+    ayar = {
+        "name": model_name,
+        "edit_format": "agent",
+        # Agent modunda repo haritası kapalı: modelin Glob/Grep/Read'i var
+        # ve harita her isteğe yeniden gömülüyor.
+        "use_repo_map": False,
+        "use_temperature": 0,
+        "streaming": True,
+    }
+    # Endpoint model AYARINA da yazılıyor, yalnızca conf'a değil. conf'taki
+    # openai-api-base tek ve geneldir; ikinci model başka bir sunucudaysa
+    # (kurum vLLM'i + yerel Ollama gibi) /model ile ona geçildiğinde istek
+    # sessizce YANLIŞ sunucuya gidiyordu. extra_params litellm çağrısına
+    # doğrudan aktarılıyor, yani her model kendi adresini taşıyor.
+    if api_base:
+        ayar["extra_params"] = {"api_base": api_base}
+        if api_key:
+            ayar["extra_params"]["api_key"] = api_key
+    settings.append(ayar)
+    # Anahtar taşıyabildiği için conf ile aynı izinle yazılıyor.
+    _write_private(settings_path, yaml.safe_dump(settings, allow_unicode=True, sort_keys=False))
     written.append(settings_path)
 
     meta_path = ayar_dizini / "model.metadata.json"

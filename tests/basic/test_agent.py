@@ -1370,6 +1370,156 @@ class TestModelSetup(unittest.TestCase):
         self.assertEqual(self._meta()[name]["max_input_tokens"], 5000)
 
 
+class TestBaglamCikmazi(unittest.TestCase):
+    """Yer açacak eski çıktı yoksa döngü ölmemeli, son çıktılara girmeli.
+
+    Ölçülen senaryo: 16k pencere, sistem promptu + bir beceri gövdesi + üç ssh
+    çıktısı. Korunan altı mesajın dışında kısaltılacak hiçbir araç çıktısı
+    kalmıyor ve döngü "kısaltacak eski çıktı kalmadı" deyip işi yarıda
+    bırakıyordu.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.prev = os.getcwd()
+        os.chdir(self.tmp.name)
+
+    def tearDown(self):
+        os.chdir(self.prev)
+        self.tmp.cleanup()
+
+    def _coder(self, pencere=16384):
+        from aider.coders import Coder
+        from aider.io import InputOutput
+        from aider.models import Model
+
+        model = Model("gpt-4o")
+        model.info = dict(model.info or {})
+        model.info["max_input_tokens"] = pencere
+        return Coder.create(
+            main_model=model,
+            edit_format="agent",
+            io=InputOutput(yes=True, pretty=False, fancy_input=False),
+            fnames=[],
+            use_git=False,
+            stream=False,
+        )
+
+    def _working(self, coder, tur=3):
+        from aider.agent.tools import cikti_siniri
+
+        tavan = cikti_siniri(coder.ctx)
+        working = [
+            dict(role="system", content=coder.fmt_system_prompt(coder.gpt_prompts.main_system)),
+            dict(role="user", content="sunucuyu incele\n\n" + "b" * coder.beceri_butcesi),
+        ]
+        for i in range(tur):
+            working.append(
+                dict(
+                    role="assistant",
+                    content="",
+                    tool_calls=[
+                        dict(id=f"c{i}", type="function", function=dict(name="Ssh", arguments="{}"))
+                    ],
+                )
+            )
+            working.append(dict(role="tool", tool_call_id=f"c{i}", name="Ssh", content="x" * tavan))
+        return working
+
+    def test_son_ciktilara_girerek_yer_aciyor(self):
+        coder = self._coder()
+        working = self._working(coder)
+        self.assertTrue(coder._baglami_toparla(working), "döngü çıkmaza girdi")
+        toplam = sum(len(str(m.get("content") or "")) for m in working)
+        self.assertLessEqual(toplam, coder._baglam_siniri())
+
+    def test_arac_cagrisi_ciftleri_bozulmuyor(self):
+        # Kısaltma yalnızca gövdeyi kesmeli; mesaj düşerse tool_calls yanıtsız
+        # kalır ve endpoint isteği reddeder.
+        coder = self._coder()
+        working = self._working(coder)
+        onceki = [(m.get("role"), m.get("tool_call_id")) for m in working]
+        coder._baglami_toparla(working)
+        self.assertEqual([(m.get("role"), m.get("tool_call_id")) for m in working], onceki)
+
+    def test_yer_varken_hicbir_sey_kisaltilmiyor(self):
+        coder = self._coder(pencere=200_000)
+        working = self._working(coder, tur=1)
+        onceki = [str(m.get("content") or "") for m in working]
+        self.assertTrue(coder._baglami_toparla(working))
+        self.assertEqual([str(m.get("content") or "") for m in working], onceki)
+
+
+class TestIkinciModel(unittest.TestCase):
+    """İkinci model başka bir sunucudaysa istek doğru yere gitmeli.
+
+    conf'taki openai-api-base tek ve genel. İkinci model eklenince üzerine
+    yazılıyor; model ayarında adres yoksa /model ile birinciye dönmek istekleri
+    SESSİZCE ikincinin sunucusuna yolluyordu.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self.tmp.name)
+        self.io = MagicMock()
+        self.istek = patch("aider.agent.model_setup._istek", return_value=None)
+        self.istek.start()
+        self.addCleanup(self.istek.stop)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _ekle(self, adres, anahtar, model):
+        self.io.prompt_ask.side_effect = [adres, anahtar, model, "16384", ""]
+        return run_setup(self.io, home=self.home)[0]
+
+    def _ayarlar(self):
+        yol = self.home / ".aider" / "model.settings.yml"
+        return {s["name"]: s for s in yaml.safe_load(yol.read_text(encoding="utf-8"))}
+
+    def test_her_model_kendi_adresini_tasiyor(self):
+        a = self._ekle("http://kurum:8000/v1", "K", "qwen3-coder")
+        b = self._ekle("http://localhost:11434/v1", "", "gemma3")
+        ayarlar = self._ayarlar()
+        self.assertEqual(ayarlar[a]["extra_params"]["api_base"], "http://kurum:8000/v1")
+        self.assertEqual(ayarlar[b]["extra_params"]["api_base"], "http://localhost:11434/v1")
+
+    def test_ikinci_model_birincinin_ayarini_silmiyor(self):
+        a = self._ekle("http://kurum:8000/v1", "K", "model-a")
+        b = self._ekle("http://kurum:8000/v1", "K", "model-b")
+        self.assertEqual(set(self._ayarlar()), {a, b})
+
+    def test_anahtar_ayar_dosyasina_da_yaziliyorsa_dosya_gizli(self):
+        self._ekle("http://kurum:8000/v1", "gizli-anahtar", "m")
+        yol = self.home / ".aider" / "model.settings.yml"
+        self.assertIn("gizli-anahtar", yol.read_text(encoding="utf-8"))
+        self.assertEqual(yol.stat().st_mode & 0o777, 0o600)
+
+    def test_adres_litellm_cagrisina_ulasiyor(self):
+        from aider.models import MODEL_SETTINGS, Model, ModelSettings
+
+        ad = self._ekle("http://ikinci:9000/v1", "B", "model-b")
+        ayar = self._ayarlar()[ad]
+        MODEL_SETTINGS.append(ModelSettings(**ayar))
+        self.addCleanup(lambda: MODEL_SETTINGS.remove(MODEL_SETTINGS[-1]))
+
+        yakalanan = {}
+
+        def sahte(**kwargs):
+            yakalanan.update(kwargs)
+            yanit = MagicMock()
+            yanit.choices = []
+            return yanit
+
+        # litellm elle yamalanmamalı: proxy üzerinde kalıcı iz bırakıyor.
+        with patch("litellm.completion", sahte):
+            try:
+                Model(ad).send_completion([{"role": "user", "content": "x"}], None, stream=False)
+            except Exception:
+                pass
+        self.assertEqual(yakalanan.get("api_base"), "http://ikinci:9000/v1")
+
+
 class TestAyarDosyasiSirasi(unittest.TestCase):
     """~/.aider/ altındaki dosya ev dizinindeki eskisini ezmeli.
 
@@ -3351,14 +3501,24 @@ class TestBaglamToparlama(unittest.TestCase):
             if msg["role"] == "tool":
                 self.assertTrue(msg.get("tool_call_id"))
 
-    def test_son_mesajlar_korunur(self):
+    def test_son_mesajlar_once_korunur(self):
+        # Muafiyet kademeli: yer ESKİ çıktılardan açılabiliyorsa son mesajlara
+        # hiç dokunulmuyor. Dokunulması yalnızca son çare — eskiden tek kademe
+        # vardı ve yer açılamayınca döngü işi yarıda bırakıyordu.
         from aider.coders.agent_coder import KORUNAN_SON_MESAJ
 
         gecmis = self._gecmis()
-        with patch.object(self.coder, "_baglam_siniri", return_value=15_000):
-            self.coder._baglami_toparla(gecmis)
+        with patch.object(self.coder, "_baglam_siniri", return_value=20_000):
+            self.assertTrue(self.coder._baglami_toparla(gecmis))
         for msg in gecmis[-KORUNAN_SON_MESAJ:]:
             self.assertNotIn("kısaltıldı", str(msg.get("content") or ""))
+
+    def test_yer_yoksa_son_mesajlara_giriliyor(self):
+        gecmis = self._gecmis()
+        with patch.object(self.coder, "_baglam_siniri", return_value=15_000):
+            self.assertTrue(self.coder._baglami_toparla(gecmis), "döngü çıkmaza girdi")
+        toplam = sum(len(str(m.get("content") or "")) for m in gecmis)
+        self.assertLessEqual(toplam, 15_000)
 
     def test_yer_acilamazsa_false_doner(self):
         gecmis = self._gecmis(tur=2, boyut=50_000)

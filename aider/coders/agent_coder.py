@@ -106,6 +106,13 @@ DOLULUK_ESIGI = 0.85
 # adımın sonucunu ham görmeli, yoksa ne yaptığını unutuyor.
 KORUNAN_SON_MESAJ = 6
 
+# Muafiyet KADEMELİ. Tek kademe çıkmaz sokak yapıyordu: 16k pencerede sistem
+# promptu + bir beceri gövdesi + üç ssh çıktısı, korunan altı mesajın DIŞINDA
+# kısaltılacak hiçbir araç çıktısı bırakmıyor. Döngü "kısaltacak eski çıktı
+# kalmadı" deyip işi yarıda bırakıyordu — ölçüldü, senaryo uydurma değil.
+# Yer açmak için son çıktılara girmek, işi yarıda bırakmaktan iyidir.
+KORUMA_KADEMELERI = (KORUNAN_SON_MESAJ, 2, 0)
+
 # Bundan kısa araç sonuçlarını kısaltmanın kazancı yok.
 KISALTMA_ESIGI = 400
 
@@ -679,23 +686,29 @@ class AgentCoder(Coder):
             return True
 
         kisaltilan = 0
-        for msg in working[:-KORUNAN_SON_MESAJ]:
-            if msg.get("role") != "tool":
-                continue
-            icerik = str(msg.get("content") or "")
-            if len(icerik) <= KISALTMA_ESIGI:
-                continue
-            msg["content"] = (
-                f"(eski araç çıktısı bağlam için kısaltıldı, {len(icerik)} karakterdi)\n"
-                + icerik[:KISALTMA_ESIGI]
-            )
-            kisaltilan += 1
+        son_kademe = 0
+        for kademe, koruma in enumerate(KORUMA_KADEMELERI):
             if toplam() <= sinir:
                 break
+            son_kademe = kademe
+            for msg in working[: len(working) - koruma]:
+                if msg.get("role") != "tool":
+                    continue
+                icerik = str(msg.get("content") or "")
+                if len(icerik) <= KISALTMA_ESIGI:
+                    continue
+                msg["content"] = (
+                    f"(araç çıktısı bağlam için kısaltıldı, {len(icerik)} karakterdi)\n"
+                    + icerik[:KISALTMA_ESIGI]
+                )
+                kisaltilan += 1
+                if toplam() <= sinir:
+                    break
 
         if kisaltilan:
+            nere = " (son adımların çıktısı dahil)" if son_kademe else ""
             self.io.tool_warning(
-                f"Bağlam doluyordu: {kisaltilan} eski araç çıktısı kısaltıldı."
+                f"Bağlam doluyordu: {kisaltilan} araç çıktısı kısaltıldı{nere}."
             )
 
         return toplam() <= sinir

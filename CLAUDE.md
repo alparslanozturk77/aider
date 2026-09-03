@@ -178,6 +178,14 @@ birleştirilemiyorlar. Ama tek dizinde toplanabiliyorlar: conf dosyası
 ikisi de `~/.aider/` altında. `~/.aider.conf.yml` yerinde kalmak zorunda —
 aider'ın kendiliğinden bulduğu giriş noktası orası.
 
+**Her model kendi endpoint'ini taşıyor.** `conf`'taki `openai-api-base` tek ve
+geneldir; ikinci model eklenince üzerine yazılıyor. İkinci model başka bir
+sunucudaysa (kurum vLLM'i + yerel Ollama gibi) `/model` ile birinciye dönmek
+istekleri SESSİZCE ikincinin sunucusuna yolluyordu. Adres ve anahtar artık
+model ayarına da `extra_params` olarak yazılıyor; `send_completion` bunu
+litellm çağrısına doğrudan aktarıyor. Anahtar taşıdığı için ayar dosyası da
+0600 yazılıyor.
+
 Eski konumdaki (`~/.aider.model.*`) tanımlar yeni dosyaya taşınıyor.
 **Eski dosya silinmedikçe okunmaya devam ediyor** — `generate_search_path_list`
 varsayılan adı her zaman arama listesine koyuyor. Zarar vermiyor çünkü liste
@@ -382,6 +390,16 @@ kırpıyordu: model dosyanın yarısını görüyor ama kalanını nereden istey
 bilmiyordu. Artık sayfa bütçeden hesaplanıyor ve başlıkta devam offset'i
 **açıkça** yazıyor (`devamı için Read(offset=148)`). 800 satırlık bir envanter
 16k pencerede altı sayfada okunuyor, hiçbiri pencereyi taşırmıyor.
+
+**Bağlam toparlama kademeli — tek kademe çıkmaz sokaktı.** `_baglami_toparla`
+yalnızca korunan son altı mesajın DIŞINDAKİ araç çıktılarını kısaltıyordu.
+Ölçüldü: 16k pencerede sistem promptu + bir beceri gövdesi + üç `ssh` çıktısı,
+o altı mesajın dışında kısaltılacak hiçbir şey bırakmıyor; döngü "kısaltacak
+eski çıktı kalmadı" deyip işi yarıda bırakıyordu. Muafiyet artık kademeli
+(`KORUMA_KADEMELERI = (6, 2, 0)`): önce eskiler, yetmezse kuyruğa girilir.
+Son adımın çıktısını kısaltmak, işi yarıda bırakmaktan iyidir; kullanıcı
+uyarıda hangisinin olduğunu görüyor. `TestBaglamCikmazi` senaryoyu birebir
+kuruyor.
 
 **Uzun oturumlar özetlenerek sıkıştırılıyor.** `_baglami_toparla` yalnızca
 tek bir mesajın araç döngüsü içinde çalışıyordu; turlar arasında biriken
