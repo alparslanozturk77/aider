@@ -26,15 +26,28 @@ göre bir sonraki adıma karar verir.
 
 ## Kurulum
 
-Tek satır:
+Tek yol var: klon + sanal ortam.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/alparslanozturk77/aider/claude-code-layer/kur.sh | sh
+dnf install -y git python3.12          # RHEL 9/10'da hazır, RHEL 8'de AppStream'den
+git clone -b claude-code-layer https://github.com/alparslanozturk77/aider.git /opt/aider
+cd /opt/aider
+python3.12 -m venv venv
+venv/bin/pip install -e .
+ln -sf /opt/aider/venv/bin/aider /usr/local/bin/aider
 ```
 
-Betik `uv`'yi (yoksa) kurar, aider-agent'ı izole bir ortama yerleştirir ve
-`aider` komutunu PATH'e koyar. **Sanal ortam kurman ya da yönetmen gerekmez;
-uv hepsini gizler.** Aynı komut güncelleme için de çalışır.
+`-e` (editable) bilinçli: kod venv'e kopyalanmaz, klondan çalışır. Güncelleme
+`git pull`'dan ibaret kalır.
+
+Sanal ortam şart: RHEL 9+ sistem Python'una kurulumu
+`externally-managed-environment` ile reddeder, zorlarsan da yüz civarı
+bağımlılık `dnf`'in site-packages'ına karışır.
+
+> Eskiden `uv` ile tek satırlık bir `kur.sh` de vardı ve belgede iki yol
+> duruyordu. Kaldırıldı: aider yönetim sunucusunda çalışıp filoya ssh ile
+> ulaşıyor, yani her düğüme kurulmuyor; yönetim sunucularının hepsinde
+> `python3.12` var. Tek yolu hatırlamak, iki yolu kıyaslamaktan kolay.
 
 Sonra modelini programın içinden tanıt:
 
@@ -145,21 +158,20 @@ aider --agent --map-tokens 1024
 > **Dal neden açıkça yazılıyor?** Deponun varsayılan dalı
 > `claude-code-layer`, yani `-b` olmadan da doğru dal gelir. Ama depoda
 > upstream aider'ı izleyen bir `main` dalı var ve orası fork noktasında
-> duruyor: `kur.sh` yok, agent katmanı yok, beceriler yok. Yanlışlıkla oradan
-> klonlarsan elinde düz aider olur ve bunu fark etmen zaman alır. `-b` bunu
-> imkânsız kılıyor.
+> duruyor: agent katmanı yok, beceriler yok. Yanlışlıkla oradan klonlarsan
+> elinde düz aider olur ve bunu fark etmen zaman alır. `-b` bunu imkânsız
+> kılıyor.
 
-`kur.sh` ağa çıkıp `uv` indirir. Kurum ağında bu engelliyse ya da elinde zaten
-bir klon varsa doğrudan depodan kur:
+Proxy arkasında ya da elinde zaten bir klon varsa aynı yordam:
 
 ```bash
 # RHEL 9: sistem Python'ı 3.9, aider >=3.10 istiyor
 dnf install -y python3.11 git
 git clone -b claude-code-layer https://github.com/alparslanozturk77/aider.git /opt/aider
 cd /opt/aider
-python3.11 -m venv .venv
-.venv/bin/python -m pip install -e .
-ln -sf /opt/aider/.venv/bin/aider /usr/local/bin/aider
+python3.11 -m venv venv
+venv/bin/python -m pip install -e .
+ln -sf /opt/aider/venv/bin/aider /usr/local/bin/aider
 ```
 
 Proxy arkasındaysan pip'e adresi ver:
@@ -168,7 +180,7 @@ Proxy arkasındaysan pip'e adresi ver:
 export https_proxy=http://proxy.kurum.local:8080
 export http_proxy="$https_proxy"
 # ya da tek seferlik:
-.venv/bin/python -m pip install --proxy "$https_proxy" -e .
+venv/bin/python -m pip install --proxy "$https_proxy" -e .
 ```
 
 `-e` (editable) bilinçli: kod venv'e kopyalanmaz, klondan çalışır. Güncelleme
@@ -185,7 +197,6 @@ için her dizinde görünürler.
 
 | Kurulum | Güncelleme |
 |---|---|
-| `kur.sh` (uv) | `./kur.sh` yeniden çalıştır (`uv tool install --force`) |
 | klon + `pip install -e .` | `git pull` yeter |
 | klon + `pip install .` | `git pull`, sonra `pip install --no-deps .` |
 | çevrimdışı paket / RPM | yeni paketi indirip kur |
@@ -193,7 +204,7 @@ için her dizinde görünürler.
 Hangisinde olduğunu şununla gör:
 
 ```bash
-.venv/bin/python -m pip show aider-chat | grep -i editable
+venv/bin/python -m pip show aider-chat | grep -i editable
 ```
 
 "Editable project location" satırı varsa `git pull` yeter.
@@ -203,7 +214,7 @@ Hangisinde olduğunu şununla gör:
 
 ```bash
 git pull
-.venv/bin/python -m pip install -e .    # yalnızca requirements değiştiyse
+venv/bin/python -m pip install -e .    # yalnızca requirements değiştiyse
 ```
 
 Agent katmanı (beceriler, slash komutları, sistem promptu) saf Python ve
@@ -236,23 +247,17 @@ x86_64 ve aarch64, Python 3.11 ve 3.12 için. `gcc`, `python3-devel` ya da
 
 Aider `>=3.10` istiyor. İki çözüm var:
 
-*Yol 1 — `kur.sh` (önerilen).* `uv` uygun Python'u kendisi indirir, sistem
-Python'una hiç dokunmaz. RHEL 8'de bile ek paket gerekmez:
-
-```bash
-sudo dnf install -y git
-curl -fsSL https://raw.githubusercontent.com/alparslanozturk77/aider/claude-code-layer/kur.sh | sh
-```
-
-*Yol 2 — AppStream Python ile elle.* Sistemde bir Python istiyorsan:
+Çözüm AppStream'den yeni bir Python kurmak; sistem Python'una dokunulmuyor:
 
 ```bash
 sudo dnf install -y git python3.12 python3.12-pip
 git clone -b claude-code-layer https://github.com/alparslanozturk77/aider.git && cd aider
-python3.12 -m venv .venv && .venv/bin/pip install -e .
+python3.12 -m venv venv && venv/bin/pip install -e .
 ```
 
-RHEL 8'de `python3.12` yoksa `python3.11` de çalışır.
+RHEL 8'de `python3.12` yoksa `python3.11` de çalışır. Aider'ı filodaki her
+düğüme kurmuyorsun: yönetim sunucusunda çalışır, diğerlerine `Ssh` aracıyla
+ulaşır. Yani hedef düğümün Python sürümü hiç önemli değil.
 
 **İsteğe bağlı sistem paketleri:**
 
@@ -277,11 +282,11 @@ pip install --no-index --find-links wheels -e .
 
 ```bash
 git clone -b claude-code-layer https://github.com/alparslanozturk77/aider.git && cd aider
-python3.12 -m venv .venv && .venv/bin/pip install -e .
+python3.12 -m venv venv && venv/bin/pip install -e .
 cp ornek/env .env
 cp ornek/aider.conf.yml .aider.conf.yml
 mkdir -p .aider && cp ornek/permissions.yml .aider/permissions.yml
-.venv/bin/aider --agent
+venv/bin/aider --agent
 ```
 
 > **Önemli:** Agent modu modelin **function calling** desteklemesini gerektirir.
@@ -292,9 +297,9 @@ mkdir -p .aider && cp ornek/permissions.yml .aider/permissions.yml
 
 ## Çevrimdışı kurulum paketleri (RHEL 9 / 10)
 
-`kur.sh` internete çıkar (uv indirir, depoyu klonlar). Ağa çıkamayan bir
-sunucuda işe yaramaz. Onun için iki paket biçimi var; ikisi de bağımlılıkları
-**wheel olarak içinde taşır** ve kurulum anında ağ istemez.
+Klon + `pip install` PyPI'a çıkar; ağa çıkamayan bir sunucuda işe yaramaz.
+Onun için iki paket biçimi var; ikisi de bağımlılıkları **wheel olarak içinde
+taşır** ve kurulum anında ağ istemez.
 
 | Biçim | Ne zaman |
 |---|---|
@@ -680,7 +685,7 @@ uğrar; istemci arka planda okuyan bir iş parçacığı kullandığı için blo
 ## Plan modu
 
 ```bash
-.venv/bin/aider --agent --plan
+venv/bin/aider --agent --plan
 ```
 
 Plan modunda `Write`, `Edit` ve `Bash` araçları modele **hiç sunulmaz** — model
@@ -858,7 +863,7 @@ merge eder, fork değişmezlerini doğrular ve testleri çalıştırır. Çakı�
 Elle merge yaptıysan:
 
 ```bash
-.venv/bin/python scripts/fork_dogrula.py
+venv/bin/python scripts/fork_dogrula.py
 ```
 
 Bu betik dokuz değişmezi **kodu çağırarak** sınar, dosyada metin aramaz. Bir
@@ -871,7 +876,7 @@ orada olduğunu söyler.
 ## Testler
 
 ```bash
-.venv/bin/python -m pytest tests/basic/test_agent.py -q
+venv/bin/python -m pytest tests/basic/test_agent.py -q
 ```
 
 127 test:

@@ -1450,6 +1450,114 @@ class TestBaglamCikmazi(unittest.TestCase):
         self.assertEqual([str(m.get("content") or "") for m in working], onceki)
 
 
+class TestSemaButcesi(unittest.TestCase):
+    """MCP araçları dar pencerede şema bütçesini patlatmamalı.
+
+    Ölçüldü (16k pencere): yerleşik yedi araç 1.488 token. Sekiz MCP aracı
+    eklenince 4.280 (%26), yirmi dört tanesiyle 9.864 (%60). İki MCP sunucusu
+    ekleyen biri, model daha tek satır okumadan pencerenin yarısını harcıyordu.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.prev = os.getcwd()
+        os.chdir(self.tmp.name)
+
+    def tearDown(self):
+        os.chdir(self.prev)
+        self.tmp.cleanup()
+
+    def _coder(self, pencere=16384):
+        from aider.coders import Coder
+        from aider.io import InputOutput
+        from aider.models import Model
+
+        model = Model("gpt-4o")
+        model.info = dict(model.info or {})
+        model.info["max_input_tokens"] = pencere
+        return Coder.create(
+            main_model=model,
+            edit_format="agent",
+            io=InputOutput(yes=True, pretty=False, fancy_input=False),
+            fnames=[],
+            use_git=False,
+            stream=False,
+        )
+
+    def _mcp_ekle(self, coder, sayi):
+        from aider.agent.registry import ToolRegistry
+        from aider.agent.tools import Tool
+
+        class SahteMCP(Tool):
+            mutating = False
+
+            def __init__(self, ad):
+                self.name = f"mcp__postgres__{ad}"
+                self.description = (
+                    "PostgreSQL veritabanında işlem yapar. Sorgu sonuçları JSON olarak"
+                    " döner ve büyük sonuçlar sayfalanır."
+                )
+                self.parameters = {
+                    "type": "object",
+                    "properties": {
+                        f"alan_{i}": {"type": "string", "description": f"{i}. parametre"}
+                        for i in range(6)
+                    },
+                    "required": ["alan_0"],
+                }
+
+        coder.registry = ToolRegistry(
+            coder._builtin_tools + [SahteMCP(f"arac{i}") for i in range(sayi)]
+        )
+        coder._sema_onbellegi = {}
+        coder._sema_uyarisi_verildi = False
+
+    def _sema_tokeni(self, coder):
+        sema = json.dumps(
+            coder.registry.schemas(enabled=coder.available_tools()), ensure_ascii=False
+        )
+        return coder.main_model.token_count(sema)
+
+    def test_dar_pencerede_butce_asilmiyor(self):
+        coder = self._coder()
+        for sayi in (8, 16, 24):
+            self._mcp_ekle(coder, sayi)
+            self.assertLessEqual(
+                self._sema_tokeni(coder), coder._sema_butcesi(), f"{sayi} MCP aracıyla"
+            )
+
+    def test_yerlesik_araclar_asla_dusmuyor(self):
+        coder = self._coder()
+        self._mcp_ekle(coder, 40)
+        sunulan = coder.available_tools()
+        for ad in ("Read", "Write", "Edit", "Bash", "Ssh", "Glob", "Grep"):
+            self.assertIn(ad, sunulan, f"{ad} düştü — agent döngüsü onsuz çalışmaz")
+
+    def test_genis_pencerede_hicbir_sey_dusmuyor(self):
+        coder = self._coder(pencere=200_000)
+        self._mcp_ekle(coder, 24)
+        self.assertEqual(len([a for a in coder.available_tools() if a.startswith("mcp__")]), 24)
+
+    def test_dusen_araclar_bir_kez_duyuruluyor(self):
+        coder = self._coder()
+        self._mcp_ekle(coder, 24)
+        with patch.object(coder.io, "tool_warning") as uyari:
+            coder.available_tools()
+            coder.available_tools()
+            coder.available_tools()
+        self.assertEqual(uyari.call_count, 1, "her turda uyarmak ekranı doldurur")
+        self.assertIn("MCP", uyari.call_args[0][0])
+
+    def test_registry_tazelenince_uyari_yeniden_verilebiliyor(self):
+        coder = self._coder()
+        self._mcp_ekle(coder, 24)
+        coder.available_tools()
+        coder.mcp.tools = []
+        coder.rebuild_registry()
+        self.assertFalse(coder._sema_uyarisi_verildi)
+        self.assertEqual(coder._sema_onbellegi, {})
+
+
 class TestTokenKapisi(unittest.TestCase):
     """Karakter hesabı "sığıyor" dese bile tokenizer son sözü söylemeli.
 

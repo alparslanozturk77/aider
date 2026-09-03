@@ -422,6 +422,14 @@ yetenek kaybolmuyor çünkü beceri tetikleme zaten kodda deterministik ve
 `/hatirla` kullanıcıda duruyor. Açılış duyurusunda hangi araçların düştüğü
 yazıyor.
 
+**Araç şemalarının kendi bütçesi var.** Yerleşik araçlar 16k pencerede 1.488
+token; MCP araçları buna ekleniyor ve ölçüldü: sekiz MCP aracı %26, yirmi dört
+tanesi %60. İki MCP sunucusu ekleyen biri, model daha tek satır okumadan
+pencerenin yarısını harcıyor ve sebebini göremiyordu. `SEMA_PAYI` (%20)
+aşılırsa MCP araçları kesiliyor; yerleşikler asla düşmez, çünkü agent döngüsü
+onlarsız çalışmaz. Düşenler bir kez, adlarıyla duyuruluyor — sessizce
+kaybolmaları "model neden bu aracı çağırmadı" sorusuna yol açıyor.
+
 **Read bütçeye göre sayfalıyor.** Eskiden 2000 satır okuyup sonucu ortadan
 kırpıyordu: model dosyanın yarısını görüyor ama kalanını nereden isteyeceğini
 bilmiyordu. Artık sayfa bütçeden hesaplanıyor ve başlıkta devam offset'i

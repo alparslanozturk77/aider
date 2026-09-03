@@ -83,6 +83,13 @@ BECERI_TAVANI = 8_000
 # Yetenek kaybolmuyor: beceri tetikleme kodda deterministik yapılıyor,
 # /hatirla kullanıcıda duruyor.
 KUCUK_PENCERE = 32_000
+
+# Araç şemalarının pencereden alabileceği azami pay. Ölçüldü: yerleşik yedi
+# araç 16k pencerede 1.488 token (%9), ama MCP araçları buna ekleniyor —
+# sekiz MCP aracı %26, yirmi dört tanesi %60. Yani iki MCP sunucusu ekleyen
+# biri, model daha tek satır okumadan pencerenin yarısını harcıyor ve sebebini
+# göremiyor. Yerleşik araçlar her zaman kalır; sığmayan MCP araçları düşer.
+SEMA_PAYI = 0.20
 KUCUK_PENCEREDE_KAPALI = ("Skill", "Hatirla", "TodoWrite")
 
 # Beceri katalogunun (37 satırlık ad + açıklama listesi) alabileceği pay.
@@ -173,6 +180,11 @@ class AgentCoder(Coder):
 
         self._builtin_tools = builtin_tools
         self.registry = ToolRegistry(builtin_tools + mcp_tools)
+
+        # Şema maliyetleri oturum boyunca sabit; her döngü turunda yeniden
+        # saymak gereksiz.
+        self._sema_onbellegi = {}
+        self._sema_uyarisi_verildi = False
 
         self.ctx = ToolContext(self)
         self.ctx.todos = TodoList()
@@ -328,6 +340,9 @@ class AgentCoder(Coder):
     def rebuild_registry(self):
         """MCP sunucuları yeniden başlatıldıktan sonra araç listesini tazele."""
         self.registry = ToolRegistry(self._builtin_tools + self.mcp.tools)
+        # Araç kümesi değişti: şema maliyetleri ve verilmiş uyarı geçersiz.
+        self._sema_onbellegi = {}
+        self._sema_uyarisi_verildi = False
 
     # ------------------------------------------------------------------
     # Duyuru / prompt
@@ -422,7 +437,62 @@ class AgentCoder(Coder):
             if dar and name in KUCUK_PENCEREDE_KAPALI:
                 continue
             names.append(name)
-        return names
+        return self._semaya_sigdir(names)
+
+    def _sema_butcesi(self):
+        try:
+            pencere = (self.main_model.info or {}).get("max_input_tokens")
+        except Exception:
+            return None
+        return int(pencere * SEMA_PAYI) if pencere else None
+
+    def _sema_maliyeti(self, name):
+        """Tek bir aracın şemasının token maliyeti; oturum boyunca değişmez."""
+        if name in self._sema_onbellegi:
+            return self._sema_onbellegi[name]
+        try:
+            sema = self.registry.schemas(enabled=[name])
+            maliyet = self.main_model.token_count(json.dumps(sema, ensure_ascii=False)) or 0
+        except Exception:
+            maliyet = 0
+        self._sema_onbellegi[name] = maliyet
+        return maliyet
+
+    def _semaya_sigdir(self, names):
+        """Şemalar bütçeyi aşıyorsa MCP araçlarını kes.
+
+        Yerleşik araçlar hiçbir zaman düşmez: onlarsız agent döngüsü çalışmaz.
+        Düşen MCP araçları bir kez duyurulur — sessizce kaybolmaları,
+        kullanıcının modele "neden bu aracı çağırmadın" diye sormasına yol
+        açıyor ve sebebi görünmüyor.
+        """
+        butce = self._sema_butcesi()
+        if not butce:
+            return names
+
+        yerlesik = [n for n in names if not n.startswith("mcp__")]
+        mcp = [n for n in names if n.startswith("mcp__")]
+        if not mcp:
+            return names
+
+        toplam = sum(self._sema_maliyeti(n) for n in yerlesik)
+        sigan, dusen = [], []
+        for n in mcp:
+            maliyet = self._sema_maliyeti(n)
+            if toplam + maliyet > butce:
+                dusen.append(n)
+                continue
+            toplam += maliyet
+            sigan.append(n)
+
+        if dusen and not self._sema_uyarisi_verildi:
+            self._sema_uyarisi_verildi = True
+            self.io.tool_warning(
+                f"Bağlam penceresi dar: {len(dusen)} MCP aracı modele sunulmuyor"
+                f" (şema bütçesi {butce:,} token). Düşenler: {', '.join(dusen)}."
+                " .mcp.json'u sadeleştir ya da daha geniş pencereli bir model kullan."
+            )
+        return yerlesik + sigan
 
     # ------------------------------------------------------------------
     # Ana döngü
