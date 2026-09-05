@@ -532,6 +532,44 @@ arkaya iki `user` mesajı vLLM/Qwen sohbet şablonlarını bozuyor. Bir de arka
 arkaya sıkıştırmalarda önceki özet döküme her zaman tam giriyor, yoksa en
 eski bilgi tur tur eriyor.
 
+## MCP: iki taşıma ve araç seçimi
+
+`aider/agent/mcp.py` hem stdio hem **streamable HTTP** konuşuyor. HTTP şart:
+Red Hat'in Satellite MCP sunucusu ve SUSE'nin Rancher MCP sunucusu yalnızca
+HTTP konuşuyor, yani stdio-only bir istemci onlara hiç bağlanamıyor.
+Yapılandırmada `url` varsa HTTP, `command` varsa stdio; ikisi birden verilirse
+hata (hangi taşımanın kullanılacağı belirsiz kalır).
+
+HTTP tarafında iki ayrıntı sessizce bozuyordu, ikisi de karşılanıyor: yanıt
+düz JSON yerine SSE akışı olabiliyor (şartname izin veriyor, Satellite
+dokümanı `/mcp/sse` gösteriyor) ve `Mcp-Session-Id` başlığı initialize
+yanıtında gelirse sonraki her isteğe geri konmalı.
+
+**Araç beyaz listesi.** `.mcp.json`'da sunucu başına `tools` listesi verilirse
+yalnızca o araçlar modele sunulur. Sebep ölçülü — gerçek
+`kubernetes-mcp-server`, 16k pencere:
+
+| | sunulan | şema |
+|---|---|---|
+| beyaz liste yok | 13 aracın 9'u (4'ü bütçe yüzünden düştü) | 3.148 token |
+| beyaz liste var | seçtiğin 4 araç | 1.978 token |
+
+Beyaz liste olmadan da bütçe koruyor ama **hangi araçların düştüğünü sen
+seçemiyorsun**; sıraya göre kesiliyor. Sunucuların kendi `--toolsets` bayrağı
+takım düzeyinde kısıyor, tek tek araç seçtirmiyor.
+
+Beyaz listede olup sunucuda olmayan ad sessizce yutulmuyor, hata olarak
+bildiriliyor: yazım hatası aracın neden görünmediğini saatlerce aratır.
+
+**Çevrimdışı kuralı HTTP'de de var.** `--offline` modunda adres çözülüp
+yerel/özel ağda olduğu doğrulanıyor; çözülemeyen ad da yerel sayılmıyor.
+Doğrulanamayan bir adrese hava boşluklu ortamda istek atmak, o ortamın varlık
+sebebine aykırı.
+
+Uçtan uca doğrulandı: skyup'ta gerçek `kubernetes-mcp-server` HTTP kipinde
+çalıştırıldı, istemcimiz bağlanıp 13 aracı keşfetti; beyaz listeyle dördü
+sunuldu, listesiz 13'ünden dördü bütçe nedeniyle düştü.
+
 ## Beceri tetikleme deterministik
 
 Modelin `Skill` aracını kendiliğinden çağırmasını beklemek 4B sınıfında

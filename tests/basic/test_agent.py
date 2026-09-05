@@ -4722,3 +4722,203 @@ class TestYapistirma(unittest.TestCase):
         io = InputOutput(yes=True, pretty=False, fancy_input=False)
         self.assertTrue(hasattr(io, "yapistirma"))
         self.assertEqual(io.yapistirma.ac("dokunulmamış"), "dokunulmamış")
+
+
+# ---------------------------------------------------------------------------
+# MCP: HTTP taşıması ve araç beyaz listesi
+# ---------------------------------------------------------------------------
+
+import threading  # noqa: E402
+from http.server import BaseHTTPRequestHandler, HTTPServer  # noqa: E402
+
+from aider.agent.mcp import MCPHttpSunucu, yerel_adres_mi  # noqa: E402
+
+
+class SahteMCPHttp(BaseHTTPRequestHandler):
+    """Gerçek bir HTTP MCP sunucusu — mock değil, socket üzerinden konuşulur."""
+
+    araclar = [
+        {"name": "hosts_list", "description": "Sunucuları listeler", "inputSchema": {}},
+        {"name": "host_details", "description": "Tek sunucu ayrıntısı", "inputSchema": {}},
+        {"name": "reports_run", "description": "Rapor çalıştırır", "inputSchema": {}},
+    ]
+    sse = False
+    gorulen_oturum = []
+
+    def log_message(self, *_):
+        pass
+
+    def do_POST(self):
+        govde = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        self.gorulen_oturum.append(self.headers.get("Mcp-Session-Id"))
+
+        if not govde.get("id"):  # bildirim
+            self.send_response(202)
+            self.end_headers()
+            return
+
+        if govde["method"] == "initialize":
+            sonuc = {"protocolVersion": "2024-11-05", "capabilities": {}}
+        elif govde["method"] == "tools/list":
+            sonuc = {"tools": self.araclar}
+        else:
+            ad = (govde.get("params") or {}).get("name")
+            sonuc = {"content": [{"type": "text", "text": f"{ad} çalıştı"}]}
+
+        yanit = {"jsonrpc": "2.0", "id": govde["id"], "result": sonuc}
+        if self.sse:
+            govde_bytes = f"event: message\ndata: {json.dumps(yanit)}\n\n".encode()
+            tur = "text/event-stream"
+        else:
+            govde_bytes = json.dumps(yanit).encode()
+            tur = "application/json"
+
+        self.send_response(200)
+        self.send_header("Content-Type", tur)
+        self.send_header("Content-Length", str(len(govde_bytes)))
+        self.send_header("Mcp-Session-Id", "oturum-42")
+        self.end_headers()
+        self.wfile.write(govde_bytes)
+
+
+class MCPHttpTestCase(unittest.TestCase):
+    sse = False
+
+    def setUp(self):
+        SahteMCPHttp.sse = self.sse
+        SahteMCPHttp.gorulen_oturum = []
+        self.sunucu = HTTPServer(("127.0.0.1", 0), SahteMCPHttp)
+        self.port = self.sunucu.server_address[1]
+        self.is_parcacigi = threading.Thread(target=self.sunucu.serve_forever, daemon=True)
+        self.is_parcacigi.start()
+        self.addCleanup(self.sunucu.shutdown)
+
+    @property
+    def url(self):
+        return f"http://127.0.0.1:{self.port}/mcp"
+
+
+class TestMCPHttpTasima(MCPHttpTestCase):
+    """Satellite ve Rancher'ın resmî sunucuları yalnızca HTTP konuşuyor."""
+
+    def test_araclar_kesfediliyor(self):
+        s = MCPHttpSunucu("satellite", self.url)
+        adlar = [a["name"] for a in s.start()]
+        self.assertEqual(adlar, ["hosts_list", "host_details", "reports_run"])
+
+    def test_arac_cagrisi_metin_donduruyor(self):
+        s = MCPHttpSunucu("satellite", self.url)
+        s.start()
+        self.assertIn("hosts_list çalıştı", s.call_tool("hosts_list", {}))
+
+    def test_oturum_kimligi_geri_konuyor(self):
+        # Bazı sunucular Mcp-Session-Id koymayan istekleri reddediyor.
+        s = MCPHttpSunucu("satellite", self.url)
+        s.start()
+        s.call_tool("hosts_list", {})
+        self.assertIn("oturum-42", SahteMCPHttp.gorulen_oturum)
+
+    def test_ulasilamayan_adres_anlasilir_hata(self):
+        s = MCPHttpSunucu("yok", "http://127.0.0.1:1/mcp")
+        with self.assertRaises(Exception) as ctx:
+            s.start()
+        self.assertIn("ulaşılamadı", str(ctx.exception))
+
+
+class TestMCPHttpSSE(MCPHttpTestCase):
+    """Şartname SSE yanıtına da izin veriyor; Satellite dokümanı /mcp/sse gösteriyor."""
+
+    sse = True
+
+    def test_sse_yaniti_ayristiriliyor(self):
+        s = MCPHttpSunucu("satellite", self.url)
+        araclar = s.start()
+        self.assertEqual(len(araclar), 3)
+        self.assertIn("host_details çalıştı", s.call_tool("host_details", {}))
+
+
+class TestMCPAracBeyazListesi(MCPHttpTestCase):
+    """Araç şemaları her isteğe giriyor; 16k pencerede üç araç bile çok olabiliyor."""
+
+    def _yonetici(self, cfg):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        (Path(tmp.name) / ".mcp.json").write_text(
+            json.dumps({"mcpServers": {"satellite": cfg}}), encoding="utf-8"
+        )
+        y = MCPManager(MagicMock(), tmp.name)
+        self.addCleanup(y.shutdown)
+        return y
+
+    def test_beyaz_liste_disindakiler_sunulmuyor(self):
+        y = self._yonetici({"url": self.url, "tools": ["hosts_list"]})
+        araclar = y.load()
+        self.assertEqual([t.remote_name for t in araclar], ["hosts_list"])
+        self.assertEqual(y.errors, [])
+
+    def test_beyaz_liste_yoksa_hepsi_sunuluyor(self):
+        self.assertEqual(len(self._yonetici({"url": self.url}).load()), 3)
+
+    def test_sunucuda_olmayan_ad_sessizce_yutulmuyor(self):
+        # Yazım hatası, aracın neden görünmediğini saatlerce aratır.
+        y = self._yonetici({"url": self.url, "tools": ["hosts_list", "yanlis_yazilmis"]})
+        y.load()
+        self.assertTrue(any("yanlis_yazilmis" in e for e in y.errors), y.errors)
+
+
+class TestMCPCevrimdisiHttp(unittest.TestCase):
+    """Hava boşluklu ortamda dışarı çıkan bir MCP sunucusu bağlanmamalı."""
+
+    def _yonetici(self, url, offline=True):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        (Path(tmp.name) / ".mcp.json").write_text(
+            json.dumps({"mcpServers": {"uzak": {"url": url}}}), encoding="utf-8"
+        )
+        y = MCPManager(MagicMock(), tmp.name, offline=offline)
+        self.addCleanup(y.shutdown)
+        return y
+
+    def test_dis_adres_cevrimdisi_modda_bloklaniyor(self):
+        y = self._yonetici("http://8.8.8.8:8080/mcp")
+        y.load()
+        self.assertTrue(any("çevrimdışı" in e for e in y.errors), y.errors)
+
+    def test_yerel_adres_serbest(self):
+        self.assertTrue(yerel_adres_mi("http://127.0.0.1:8080/mcp"))
+        self.assertTrue(yerel_adres_mi("http://10.13.4.71:8080/mcp"))
+        self.assertTrue(yerel_adres_mi("http://192.168.1.5/mcp"))
+
+    def test_dis_adres_yerel_degil(self):
+        self.assertFalse(yerel_adres_mi("http://8.8.8.8/mcp"))
+
+    def test_cozulemeyen_ad_yerel_sayilmiyor(self):
+        # Doğrulanamayan adrese hava boşluklu ortamda istek atmak yanlış.
+        self.assertFalse(yerel_adres_mi("http://bu-ad-yok.gecersiz-tld/mcp"))
+
+
+class TestMCPYapilandirmaDogrulama(unittest.TestCase):
+    def _oku(self, cfg):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        yol = Path(tmp.name) / ".mcp.json"
+        yol.write_text(json.dumps({"mcpServers": {"x": cfg}}), encoding="utf-8")
+        return read_config(yol)
+
+    def test_command_da_url_de_yoksa_hata(self):
+        with self.assertRaises(Exception) as c:
+            self._oku({"args": ["a"]})
+        self.assertIn("'command' ya da 'url'", str(c.exception))
+
+    def test_ikisi_birden_verilirse_hata(self):
+        with self.assertRaises(Exception) as c:
+            self._oku({"command": "x", "url": "http://y/mcp"})
+        self.assertIn("belirsiz", str(c.exception))
+
+    def test_tools_liste_degilse_hata(self):
+        with self.assertRaises(Exception) as c:
+            self._oku({"url": "http://y/mcp", "tools": "hosts_list"})
+        self.assertIn("dize listesi", str(c.exception))
+
+    def test_gecerli_stdio_yapilandirmasi_kabul(self):
+        self.assertIn("x", self._oku({"command": "echo"}))

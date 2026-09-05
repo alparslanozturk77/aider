@@ -8,7 +8,8 @@ Bağımlılık eklememek için resmi MCP SDK'sı yerine satır bazlı JSON-RPC 2
 konuşan küçük ve senkron bir istemci kullanılıyor; aider'ın gövdesi senkron
 olduğu için async bir istemci köprülemek gereksiz karmaşıklık getirirdi.
 
-Yapılandırma, Claude Code ile aynı biçimde `.mcp.json` dosyasından okunur:
+Yapılandırma, Claude Code ile aynı biçimde `.mcp.json` dosyasından okunur.
+İki taşıma destekleniyor — hangisinin kullanılacağı alanlardan anlaşılır:
 
     {
       "mcpServers": {
@@ -16,20 +17,40 @@ Yapılandırma, Claude Code ile aynı biçimde `.mcp.json` dosyasından okunur:
           "command": "npx",
           "args": ["-y", "@modelcontextprotocol/server-postgres", "postgres://..."],
           "env": {"PGPASSWORD": "..."}
+        },
+        "satellite": {
+          "url": "http://localhost:8080/mcp/sse",
+          "headers": {"FOREMAN_USERNAME": "...", "FOREMAN_TOKEN": "..."},
+          "tools": ["hosts_list", "host_details"]
         }
       }
     }
+
+`url` verilen sunucuya streamable HTTP ile bağlanılır. Bu şart: Red Hat'in
+Satellite MCP sunucusu ve SUSE'nin Rancher MCP sunucusu yalnızca HTTP
+konuşuyor, yani stdio-only bir istemci onlara hiç bağlanamıyor.
+
+`tools` verilirse yalnızca o araçlar modele sunulur. Bu da şart, çünkü araç
+şemaları HER isteğe giriyor: ölçüldü, 16k pencereli bir modelde sekiz MCP
+aracı pencerenin dörtte birini, on altısı yarısına yakınını yiyor. Sunucuların
+kendi `--toolsets` bayrakları takım düzeyinde kısıyor, tek tek araç
+seçtirmiyor.
 """
 
 import atexit
+import ipaddress
 import json
 import os
 import queue
+import socket
 import subprocess
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 from .registry import ToolError
 from .tools import Tool, _truncate
@@ -232,20 +253,198 @@ class MCPServer:
                 return msg.get("result", {})
 
     def call_tool(self, tool_name, arguments):
-        result = self._request("tools/call", {"name": tool_name, "arguments": arguments})
+        return _sonuc_metni(
+            self._request("tools/call", {"name": tool_name, "arguments": arguments})
+        )
 
-        # MCP yanıtı bir içerik parçaları listesidir; metin olanları birleştir.
-        parts = []
-        for item in result.get("content", []) or []:
-            if item.get("type") == "text":
-                parts.append(item.get("text", ""))
-            else:
-                parts.append(f"[{item.get('type')} içeriği döndü]")
 
-        text = "\n".join(p for p in parts if p) or "(sunucu boş yanıt döndü)"
-        if result.get("isError"):
-            return f"Hata: {text}"
-        return text
+def _sonuc_metni(result):
+    """`tools/call` yanıtını düz metne çevir; iki taşıma da bunu kullanır."""
+    parts = []
+    for item in result.get("content", []) or []:
+        if item.get("type") == "text":
+            parts.append(item.get("text", ""))
+        else:
+            parts.append(f"[{item.get('type')} içeriği döndü]")
+
+    text = "\n".join(p for p in parts if p) or "(sunucu boş yanıt döndü)"
+    if result.get("isError"):
+        return f"Hata: {text}"
+    return text
+
+
+def yerel_adres_mi(url):
+    """Adres yerel ağda mı? Çevrimdışı modda dışarı çıkmayı engellemek için.
+
+    Ad çözülemezse HAYIR sayılıyor: doğrulanamayan bir adrese hava boşluklu
+    ortamda istek atmak, o ortamın varlık sebebine aykırı.
+    """
+    host = urlparse(url).hostname
+    if not host:
+        return False
+    try:
+        adresler = socket.getaddrinfo(host, None)
+    except (socket.gaierror, UnicodeError, OSError):
+        return False
+    for aile in adresler:
+        try:
+            ip = ipaddress.ip_address(aile[4][0])
+        except ValueError:
+            return False
+        if not (ip.is_loopback or ip.is_private or ip.is_link_local):
+            return False
+    return bool(adresler)
+
+
+class MCPHttpSunucu:
+    """Streamable HTTP üzerinden konuşan MCP sunucusu.
+
+    Süreç yönetmiyor: sunucu zaten ayakta, biz yalnızca POST atıyoruz. Yanıt
+    ya düz JSON ya da SSE akışı olabiliyor; şartname ikisine de izin verdiği
+    için ikisi de ayrıştırılıyor.
+
+    Oturum kimliği (`Mcp-Session-Id`) initialize yanıtında gelirse sonraki
+    her isteğe geri konuyor; koymayan istemcileri bazı sunucular reddediyor.
+    """
+
+    def __init__(self, name, url, headers=None, timeout=REQUEST_TIMEOUT):
+        self.name = name
+        self.url = url
+        self.headers = dict(headers or {})
+        self.timeout = timeout
+        self.tools = []
+        self.oturum = None
+        self._next_id = 0
+        self._lock = threading.Lock()
+        self._acik = False
+
+    # -- yaşam döngüsü -------------------------------------------------------
+
+    def start(self):
+        self._acik = True
+        try:
+            self._request(
+                "initialize",
+                {
+                    "protocolVersion": PROTOCOL_VERSION,
+                    "capabilities": {},
+                    "clientInfo": {"name": "aider-agent", "version": "1"},
+                },
+                timeout=STARTUP_TIMEOUT,
+            )
+            self._notify("notifications/initialized")
+            result = self._request("tools/list", {}, timeout=STARTUP_TIMEOUT)
+        except MCPError:
+            self._acik = False
+            raise
+
+        self.tools = result.get("tools", []) or []
+        return self.tools
+
+    def stop(self):
+        self._acik = False
+        self.oturum = None
+
+    def is_alive(self):
+        return self._acik
+
+    # -- JSON-RPC over HTTP --------------------------------------------------
+
+    def _gonder(self, govde, timeout):
+        basliklar = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
+        basliklar.update(self.headers)
+        if self.oturum:
+            basliklar["Mcp-Session-Id"] = self.oturum
+
+        istek = urllib.request.Request(
+            self.url,
+            data=json.dumps(govde).encode("utf-8"),
+            headers=basliklar,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(istek, timeout=timeout) as yanit:
+                oturum = yanit.headers.get("Mcp-Session-Id")
+                if oturum:
+                    self.oturum = oturum
+                govde_metni = yanit.read().decode("utf-8", "replace")
+                tur = (yanit.headers.get("Content-Type") or "").lower()
+        except urllib.error.HTTPError as err:
+            detay = ""
+            try:
+                detay = " — " + err.read().decode("utf-8", "replace")[:300]
+            except Exception:
+                pass
+            raise MCPError(f"'{self.name}' HTTP {err.code}{detay}")
+        except (urllib.error.URLError, OSError) as err:
+            raise MCPError(f"'{self.name}' adresine ulaşılamadı: {err}")
+
+        return govde_metni, tur
+
+    @staticmethod
+    def _sse_ayikla(metin):
+        """SSE gövdesindeki `data:` satırlarını JSON nesnelerine çevir."""
+        out = []
+        for satir in metin.splitlines():
+            satir = satir.strip()
+            if not satir.startswith("data:"):
+                continue
+            veri = satir[len("data:") :].strip()
+            if not veri or veri == "[DONE]":
+                continue
+            try:
+                out.append(json.loads(veri))
+            except json.JSONDecodeError:
+                continue
+        return out
+
+    def _mesajlar(self, govde_metni, tur):
+        if "text/event-stream" in tur:
+            return self._sse_ayikla(govde_metni)
+        if not govde_metni.strip():
+            return []
+        try:
+            veri = json.loads(govde_metni)
+        except json.JSONDecodeError:
+            # Bazı sunucular Content-Type'ı yanlış bildiriyor; SSE olarak dene.
+            return self._sse_ayikla(govde_metni)
+        return veri if isinstance(veri, list) else [veri]
+
+    def _notify(self, method, params=None):
+        if not self._acik:
+            return
+        try:
+            self._gonder({"jsonrpc": "2.0", "method": method, "params": params or {}}, self.timeout)
+        except MCPError:
+            # Bildirim yanıtsızdır; başarısızlığı oturumu düşürmemeli.
+            pass
+
+    def _request(self, method, params, timeout=None):
+        with self._lock:
+            self._next_id += 1
+            req_id = self._next_id
+            govde_metni, tur = self._gonder(
+                {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params},
+                timeout or self.timeout,
+            )
+
+        for msg in self._mesajlar(govde_metni, tur):
+            if msg.get("id") != req_id:
+                continue
+            if "error" in msg:
+                err = msg["error"]
+                raise MCPError(f"{err.get('code')}: {err.get('message')}")
+            return msg.get("result", {})
+
+        raise MCPError(f"'{self.name}' sunucusundan {method} için yanıt gelmedi")
+
+    def call_tool(self, tool_name, arguments):
+        return _sonuc_metni(
+            self._request("tools/call", {"name": tool_name, "arguments": arguments})
+        )
 
 
 class MCPTool(Tool):
@@ -305,8 +504,20 @@ def read_config(path):
 
     out = {}
     for name, cfg in servers.items():
-        if not isinstance(cfg, dict) or not cfg.get("command"):
-            raise MCPError(f"{path}: '{name}' sunucusunda 'command' eksik")
+        if not isinstance(cfg, dict):
+            raise MCPError(f"{path}: '{name}' sunucusu bir nesne olmalı")
+        if not cfg.get("command") and not cfg.get("url"):
+            raise MCPError(f"{path}: '{name}' sunucusunda 'command' ya da 'url' olmalı")
+        if cfg.get("command") and cfg.get("url"):
+            raise MCPError(
+                f"{path}: '{name}' hem 'command' hem 'url' veriyor; hangi taşımanın"
+                " kullanılacağı belirsiz kalır"
+            )
+        araclar = cfg.get("tools")
+        if araclar is not None and not (
+            isinstance(araclar, list) and all(isinstance(a, str) for a in araclar)
+        ):
+            raise MCPError(f"{path}: '{name}' içindeki 'tools' bir dize listesi olmalı")
         out[name] = cfg
     return out
 
@@ -345,20 +556,10 @@ class MCPManager:
             return self.tools
 
         for name, cfg in configs.items():
-            if self.offline and cfg["command"] in AG_INDIREN_KOMUTLAR:
-                self.errors.append(
-                    f"{name}: '{cfg['command']}' paketi ağdan indirir, çevrimdışı modda"
-                    " başlatılmadı. Paketi önceden kurup 'command' alanına doğrudan"
-                    " çalıştırılabilir yolu yaz."
-                )
+            server = self._sunucu_kur(name, cfg)
+            if server is None:
                 continue
-            server = MCPServer(
-                name=name,
-                command=cfg["command"],
-                args=cfg.get("args"),
-                env=cfg.get("env"),
-                cwd=cfg.get("cwd") or self.project_root,
-            )
+
             try:
                 specs = server.start()
             except MCPError as err:
@@ -367,12 +568,59 @@ class MCPManager:
                 continue
 
             self.servers[name] = server
-            for spec in specs:
-                if not spec.get("name"):
-                    continue
+            for spec in self._secilenler(name, specs, cfg.get("tools")):
                 self.tools.append(MCPTool(server, spec))
 
         return self.tools
+
+    def _sunucu_kur(self, name, cfg):
+        """Yapılandırmadan taşımayı seç. Başlatılmayacaksa None döner."""
+        if cfg.get("url"):
+            if self.offline and not yerel_adres_mi(cfg["url"]):
+                self.errors.append(
+                    f"{name}: '{cfg['url']}' yerel ağda değil (ya da adı çözülemedi),"
+                    " çevrimdışı modda bağlanılmadı."
+                )
+                return None
+            return MCPHttpSunucu(name=name, url=cfg["url"], headers=cfg.get("headers"))
+
+        if self.offline and cfg["command"] in AG_INDIREN_KOMUTLAR:
+            self.errors.append(
+                f"{name}: '{cfg['command']}' paketi ağdan indirir, çevrimdışı modda"
+                " başlatılmadı. Paketi önceden kurup 'command' alanına doğrudan"
+                " çalıştırılabilir yolu yaz."
+            )
+            return None
+
+        return MCPServer(
+            name=name,
+            command=cfg["command"],
+            args=cfg.get("args"),
+            env=cfg.get("env"),
+            cwd=cfg.get("cwd") or self.project_root,
+        )
+
+    def _secilenler(self, name, specs, beyaz_liste):
+        """Beyaz liste verilmişse yalnızca oradaki araçları sun.
+
+        Sebep ölçülü: araç şemaları her isteğe giriyor ve 16k pencereli bir
+        modelde on altı araç pencerenin yarısına yakınını yiyor. Beyaz listede
+        olup sunucuda olmayan ad sessizce yutulmuyor — yazım hatası, aracın
+        neden görünmediğini saatlerce aratır.
+        """
+        gecerli = [s for s in specs if s.get("name")]
+        if beyaz_liste is None:
+            return gecerli
+
+        istenen = list(beyaz_liste)
+        mevcut = {s["name"] for s in gecerli}
+        bulunmayan = [a for a in istenen if a not in mevcut]
+        if bulunmayan:
+            self.errors.append(
+                f"{name}: 'tools' listesindeki şu araçlar sunucuda yok: "
+                + ", ".join(bulunmayan)
+            )
+        return [s for s in gecerli if s["name"] in istenen]
 
     def shutdown(self):
         for server in self.servers.values():
