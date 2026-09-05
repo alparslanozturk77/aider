@@ -64,10 +64,13 @@ olarak gelir, kurulum ağ istemez. [Sürüm sayfasından](https://github.com/alp
 indir:
 
 ```bash
-tar -xzf aider-agent-1.0.0-rhel10-x86_64.tar.gz
-cd aider-agent-1.0.0 && ./cevrimdisi-kur.sh /opt/aider-agent
-# ya da:  dnf install ./aider-agent-1.0.0-1.el10.x86_64.rpm
+tar -xzf aider-agent-<sürüm>-rhel10-x86_64.tar.gz
+cd aider-agent-<sürüm> && ./cevrimdisi-kur.sh /opt/aider-agent
+# ya da:  dnf install ./aider-agent-<sürüm>-1.el10.x86_64.rpm
 ```
+
+> Sürüm numarası yayın sayfasındaki dosya adından gelir; burada sabit bir
+> numara yazmak, olmayan bir dosyayı indirtmeye çalışır.
 
 RHEL 9'da önce `dnf install python3.12` gerekir (sistem Python'ı 3.9, aider
 `>=3.10` istiyor). RHEL 10'da sistem Python'ı zaten 3.12.
