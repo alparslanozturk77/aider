@@ -993,18 +993,22 @@ class AgentCoder(Coder):
         try:
             args = json.loads(raw_args) if raw_args.strip() else {}
         except json.JSONDecodeError as err:
-            return (
-                f"Hata: {name} argümanları geçerli JSON değil ({err}). " f"Gelen: {raw_args[:500]}"
+            return self._reddet(
+                name,
+                {},
+                f"Hata: {name} argümanları geçerli JSON değil ({err}). Gelen: {raw_args[:500]}",
             )
 
         if name not in self.registry:
-            return f"Hata: '{name}' diye bir araç yok."
+            return self._reddet(name, args, f"Hata: '{name}' diye bir araç yok.")
 
         tool = self.registry.get(name)
         if self.ctx.plan_mode and tool.mutating:
-            return (
+            return self._reddet(
+                name,
+                args,
                 f"Hata: plan modunda {name} kullanılamaz. Önce araştırmanı bitir ve "
-                "planı ExitPlanMode ile sun."
+                "planı ExitPlanMode ile sun.",
             )
 
         self._show_tool_call(name, args)
@@ -1017,6 +1021,18 @@ class AgentCoder(Coder):
         self._show_tool_result(name, result)
 
         return result
+
+    def _reddet(self, name, args, mesaj):
+        """Çalıştırılmadan reddedilen çağrıyı kullanıcıya da göster.
+
+        Eskiden bu üç yol (bozuk JSON, olmayan araç, plan modunda yan etkili
+        araç) sessizce dönüyordu: model reddi görüyordu ama ekranda hiçbir şey
+        çıkmıyordu. Kullanıcı "hiçbir şey yapmadı" sanıyor, oysa denendi ve
+        engellendi. skyup'ta plan modu denemesinde yakalandı.
+        """
+        self._show_tool_call(name, args)
+        self._show_tool_result(name, mesaj)
+        return mesaj
 
     def _show_tool_result(self, name, result):
         """Araç çıktısını kullanıcıya özetleyerek göster."""

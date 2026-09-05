@@ -29,15 +29,26 @@ import re
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-# Token saymak için tokenizer yok; karakter/token oranı ölçülmüş en kötü değer.
-# Amaç kesin sayı değil, sınırın aşıldığını yakalamak.
+# Sayım gerçek tokenizer ile yapılır. Kaba tahmin (karakter/2) bir kez
+# yanılttı: pencereye rahat sığan bir isteği "aşıyor" diye gösterdi ve
+# olmayan bir hata arandı. Test düzeneğinin ölçüsü yanlışsa düzenek zararlı.
 KARAKTER_BASINA_TOKEN = 2.0
+
+try:
+    import tiktoken
+
+    _KODLAYICI = tiktoken.get_encoding("cl100k_base")
+except Exception:  # tiktoken yoksa kaba tahmine düş
+    _KODLAYICI = None
 
 AYAR = {"pencere": 16384, "senaryo": [], "sira": 0, "ihlal": 0}
 
 
 def _token(mesajlar):
-    return int(len(json.dumps(mesajlar, ensure_ascii=False)) / KARAKTER_BASINA_TOKEN)
+    metin = json.dumps(mesajlar, ensure_ascii=False)
+    if _KODLAYICI is not None:
+        return len(_KODLAYICI.encode(metin))
+    return int(len(metin) / KARAKTER_BASINA_TOKEN)
 
 
 def denetle(govde):
@@ -133,7 +144,8 @@ class Sunucu(BaseHTTPRequestHandler):
             return
 
         sorunlar, tahmin, sayi = denetle(govde)
-        etiket = f"[istek {AYAR['sira'] + 1}] {sayi} mesaj, ~{tahmin} token"
+        olcu = "token" if _KODLAYICI is not None else "token (kaba tahmin)"
+        etiket = f"[istek {AYAR['sira'] + 1}] {sayi} mesaj, {tahmin} {olcu}"
         if sorunlar:
             AYAR["ihlal"] += len(sorunlar)
             print(f"{etiket}  İHLAL:", file=sys.stderr)

@@ -1450,6 +1450,72 @@ class TestBaglamCikmazi(unittest.TestCase):
         self.assertEqual([str(m.get("content") or "") for m in working], onceki)
 
 
+class TestReddedilenCagriGorunur(unittest.TestCase):
+    """Çalıştırılmadan reddedilen çağrı kullanıcıya da görünmeli.
+
+    skyup'ta plan modu denemesinde yakalandı: model Write çağırdı, plan modu
+    reddetti, model reddi gördü — ama ekranda hiçbir şey çıkmadı. Kullanıcı
+    "hiçbir şey yapmadı" sanıyor, oysa denendi ve engellendi.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.prev = os.getcwd()
+        os.chdir(self.tmp.name)
+
+    def tearDown(self):
+        os.chdir(self.prev)
+        self.tmp.cleanup()
+
+    def _coder(self, plan=False):
+        from aider.coders import Coder
+        from aider.io import InputOutput
+        from aider.models import Model
+
+        return Coder.create(
+            main_model=Model("gpt-4o"),
+            edit_format="agent",
+            io=InputOutput(yes=True, pretty=False, fancy_input=False),
+            fnames=[],
+            use_git=False,
+            stream=False,
+            plan_mode=plan,
+        )
+
+    def _cagri(self, ad, argumanlar):
+        return {"id": "c1", "type": "function", "function": {"name": ad, "arguments": argumanlar}}
+
+    def _ekrana_yazilan(self, coder, cagri):
+        with patch.object(coder.io, "tool_output") as cikti:
+            sonuc = coder._run_tool_call(cagri)
+        return sonuc, " ".join(str(c) for c in cikti.call_args_list)
+
+    def test_plan_modunda_reddedilen_arac_ekranda(self):
+        coder = self._coder(plan=True)
+        sonuc, ekran = self._ekrana_yazilan(
+            coder, self._cagri("Write", '{"file_path":"a.txt","content":"x"}')
+        )
+        self.assertIn("plan modunda", sonuc)
+        self.assertIn("Write", ekran, "reddedilen çağrı ekranda görünmüyor")
+
+    def test_olmayan_arac_ekranda(self):
+        coder = self._coder()
+        sonuc, ekran = self._ekrana_yazilan(coder, self._cagri("YokBoyleArac", "{}"))
+        self.assertIn("diye bir araç yok", sonuc)
+        self.assertIn("YokBoyleArac", ekran)
+
+    def test_bozuk_json_ekranda(self):
+        coder = self._coder()
+        sonuc, ekran = self._ekrana_yazilan(coder, self._cagri("Read", "{bozuk"))
+        self.assertIn("geçerli JSON değil", sonuc)
+        self.assertIn("Read", ekran)
+
+    def test_plan_modunda_dosya_yazilmiyor(self):
+        coder = self._coder(plan=True)
+        coder._run_tool_call(self._cagri("Write", '{"file_path":"a.txt","content":"x"}'))
+        self.assertFalse(Path("a.txt").exists(), "plan modunda dosya yazıldı")
+
+
 class TestTurSonuKazasi(unittest.TestCase):
     """Tur sonu, hiç başarılı tamamlama olmadan da düşmemeli.
 

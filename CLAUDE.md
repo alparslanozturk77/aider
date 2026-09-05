@@ -91,6 +91,27 @@ Beş ardışık okuma isteği 4.299 → 8.583 → 12.884 token büyüttü, sonra
 devreye girip 13.252 → 13.632 → 14.023'te tuttu. Altı isteğin hiçbiri 16.384'ü
 aşmadı, hiçbirinde yetim `tool_call` çıkmadı ve iş yarıda kalmadı.
 
+### Canlı senaryo matrisi
+
+Birim testleri döngüyü sonuna kadar götürmüyor; iki hata yalnızca programı
+gerçekten çalıştırınca çıktı. Sahte endpoint'e karşı şunlar canlı sınandı
+(skyup, AlmaLinux 10):
+
+| Senaryo | Sonuç |
+|---|---|
+| 800 satırlık dosyayı sayfa sayfa okuma | 6 sayfa, devam offset'i doğru |
+| Pencereyi taşıran beş ardışık okuma | kırpma tuttu, iş yarıda kalmadı |
+| Araç hatası (olmayan dosya) | döngü toparlandı, ikinci araca geçti |
+| Bash | komut gerçekten çalıştı |
+| Plan modunda `Write` | dosya oluşmadı; **ekranda görünmüyordu — düzeltildi** |
+| Oturum kaydı + `--continue` | `tool_calls` korundu, yetim çağrı çıkmadı |
+| 7k pencerede dört tur | büyüme 4.425 → 4.984'te düzleşti |
+
+**Ölçünün kendisi de yanılabilir.** Sahte endpoint önce token'ı karakter/2 ile
+tahmin ediyordu; pencereye rahat sığan bir isteği "aşıyor" gösterdi ve olmayan
+bir hata arandı. Artık gerçek tokenizer (tiktoken) kullanıyor. Test düzeneğinin
+ölçüsü yanlışsa düzenek zararlı.
+
 ## Komutlar
 
 ```bash
